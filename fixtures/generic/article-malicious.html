@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Malicious Fixture</title>
+</head>
+<body>
+  <article>
+    <h1>Malicious Fixture</h1>
+    <p>Safe visible text in a paragraph.</p>
+    <script>globalThis.__PAGE2AGENT_SCRIPT_RAN__ = true; alert("x")</script>
+    <p onclick="globalThis.__PAGE2AGENT_HANDLER_RAN__ = true">Safe visible text with an event attribute.</p>
+    <a href="javascript:alert(1)">Click me</a>
+    <a href="vbscript:msgbox(1)">Bad</a>
+    <img src="data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;">
+    <img src="javascript:alert(1)">
+    <img src="http://" onerror="globalThis.__PAGE2AGENT_IMG_RAN__ = true">
+    <p>Read the <a href="javascript:alert(1)">dangerous link</a> carefully.</p>
+    <p>After the malicious nodes, the article continues with meaningful text that Readability should keep.</p>
+    <p>The pipeline never executes page scripts and never preserves executable URLs in the domain model.</p>
+  </article>
+</body>
+</html>

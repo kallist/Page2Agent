@@ -64,6 +64,23 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/adapters/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["react", "react-dom"], message: "Adapters must not depend on React." },
+            {
+              group: ["../extension/**", "../../extension/**", "src/extension/**"],
+              message: "Adapters must not import extension runtime code.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["vite.config.ts", "vite.content.config.ts", "scripts/**/*.mjs", "tests/**/*.ts"],
     languageOptions: {
       globals: { ...globals.node },

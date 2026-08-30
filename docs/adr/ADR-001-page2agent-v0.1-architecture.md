@@ -293,16 +293,14 @@ ContentBlock[]
 NormalizedDocument
 ```
 
-The live page DOM must never be mutated. TASK 04 may consider
-`@mozilla/readability` as the main-content detection tool. If Readability is
-used, its HTML output is still NOT the canonical model — extraction must
-continue:
+The live page DOM must never be mutated. V0.1 main-content detection adopts
+`@mozilla/readability` (installed in TASK 04), executed only on a cloned,
+detached document — never on the live page. Readability's HTML output is
+still NOT the canonical model — extraction must continue:
 
 ```text
 Readability → ContentBlock[] → NormalizedDocument
 ```
-
-No dependency is installed in TASK 01.
 
 ### GitHub Issue Adapter Strategy
 
@@ -554,7 +552,7 @@ Runtime:
 
 - TypeScript-compiled JavaScript
 - React, React DOM
-- `@mozilla/readability` (candidate, evaluated in TASK 04)
+- `@mozilla/readability` (adopted in TASK 04 for Generic main-content detection)
 
 Development:
 
