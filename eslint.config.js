@@ -29,6 +29,10 @@ export default tseslint.config(
       ...reactHooksRules,
       // TypeScript reports unknown globals at typecheck time.
       "no-undef": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
     },
   },
   {
@@ -40,6 +44,23 @@ export default tseslint.config(
     ],
     languageOptions: {
       globals: { ...globals.browser },
+    },
+  },
+  {
+    files: ["src/core/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["react", "react-dom"], message: "Core domain must not depend on React." },
+            {
+              group: ["../extension/**", "../../extension/**", "src/extension/**"],
+              message: "Core domain must not import extension runtime code.",
+            },
+          ],
+        },
+      ],
     },
   },
   {
