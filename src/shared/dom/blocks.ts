@@ -1,5 +1,5 @@
 /**
- * Deterministic DOM → ContentBlock normalization for the article body.
+ * Shared site-neutral semantic DOM → ContentBlock normalization.
  *
  * Rules:
  * - Semantic elements (headings, p, pre, blockquote, ul/ol, table, img, a,
@@ -10,14 +10,9 @@
  * - Inline anchors: visible text is preserved inside the semantic block and
  *   safe links are appended as LinkBlocks right after it (deduplicated per
  *   container). Markdown is never produced.
- * - URL policy is delegated to core normalizeLinkUrl / normalizeAssetUrl with
- *   the PageContext URL as base (raw attributes, deterministic).
+ * - URL policy is delegated to core normalizeLinkUrl / normalizeAssetUrl.
  */
-import {
-  isTableBlock,
-  normalizeAssetUrl,
-  normalizeLinkUrl,
-} from "../../core";
+import { isTableBlock, normalizeAssetUrl, normalizeLinkUrl } from "../../core";
 import type {
   ContentBlock,
   ImageBlock,
@@ -25,6 +20,7 @@ import type {
   TableBlock,
 } from "../../core";
 import { extractCodeBlock } from "./code-block";
+import { getNormalizedText, normalizeInlineText } from "./text";
 
 const SKIPPED_TAGS = new Set([
   "SCRIPT",
@@ -98,86 +94,9 @@ const INLINE_TAGS = new Set([
   "WBR",
 ]);
 
-/**
- * Block-level tags act as word boundaries inside text collection (e.g. a
- * nested <ul> inside an <li>, or table cells) so concatenated text keeps
- * spaces between segments.
- */
-const TEXT_BOUNDARY_TAGS = new Set([
-  "P",
-  "DIV",
-  "UL",
-  "OL",
-  "LI",
-  "TABLE",
-  "THEAD",
-  "TBODY",
-  "TR",
-  "TD",
-  "TH",
-  "PRE",
-  "BLOCKQUOTE",
-  "H1",
-  "H2",
-  "H3",
-  "H4",
-  "H5",
-  "H6",
-  "SECTION",
-  "ARTICLE",
-  "FIGURE",
-  "FIGCAPTION",
-  "HEADER",
-  "FOOTER",
-  "ASIDE",
-  "MAIN",
-  "NAV",
-  "HR",
-  "FORM",
-]);
-
 const IMAGE_ATTRIBUTE_FALLBACKS = ["src", "data-src", "data-original"] as const;
 
-/** Normalize whitespace for ordinary text (NBSP → space, collapse runs). */
-export function normalizeInlineText(raw: string): string {
-  return raw.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
-}
-
-/** Visible semantic text of a node; <br> counts as whitespace, skipped tags excluded. */
-export function getNormalizedText(node: Node): string {
-  const parts: string[] = [];
-  collectText(node, parts);
-  return normalizeInlineText(parts.join(""));
-}
-
-function collectText(node: Node, parts: string[]): void {
-  if (node.nodeType === Node.TEXT_NODE) {
-    parts.push(node.textContent ?? "");
-    return;
-  }
-  if (node.nodeType !== Node.ELEMENT_NODE) {
-    return;
-  }
-  const element = node as Element;
-  if (SKIPPED_TAGS.has(element.tagName)) {
-    return;
-  }
-  if (element.tagName === "BR") {
-    parts.push(" ");
-    return;
-  }
-  if (TEXT_BOUNDARY_TAGS.has(element.tagName)) {
-    parts.push(" ");
-  }
-  for (const child of node.childNodes) {
-    collectText(child, parts);
-  }
-  if (TEXT_BOUNDARY_TAGS.has(element.tagName)) {
-    parts.push(" ");
-  }
-}
-
-/** Convert the article body into semantic blocks in reading order. */
+/** Convert a semantic body subtree into blocks in reading order. */
 export function domToBlocks(root: Element, sourceUrl: string): ContentBlock[] {
   const blocks: ContentBlock[] = [];
   for (const child of [...root.children]) {
@@ -277,10 +196,15 @@ function pushHeading(
 
 function pushParagraph(element: Element, blocks: ContentBlock[], sourceUrl: string): void {
   const text = getNormalizedText(element);
-  if (!text) {
-    return;
+  if (text) {
+    blocks.push({ type: "paragraph", text });
   }
-  blocks.push({ type: "paragraph", text });
+  // Inline images inside a paragraph are still content references.
+  for (const child of element.children) {
+    if (child.tagName === "IMG") {
+      walk(child, blocks, sourceUrl);
+    }
+  }
   appendReferenceLinks(element, blocks, sourceUrl);
 }
 

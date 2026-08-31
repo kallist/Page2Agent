@@ -4,7 +4,7 @@
  * it comes from PageContext at the extractor level.
  */
 import { isSafeAbsoluteUrl, normalizeLinkUrl } from "../../core";
-import { normalizeInlineText } from "./dom-to-blocks";
+import { normalizeInlineText } from "../../shared/dom/text";
 
 /** Public fields of Readability's parse() result used by Page2Agent. */
 export interface ReadabilityArticle {

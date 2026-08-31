@@ -1,8 +1,9 @@
 /**
- * Code block extraction + lightweight language hint detection.
- * Cleanup is conservative and site-neutral: copy buttons, aria-hidden
- * decorative nodes, and clearly marked line-number gutters are removed.
- * Mutation is safe here: these functions only ever run on cloned/detached DOM.
+ * Shared site-neutral code block extraction + lightweight language hint
+ * detection. Cleanup is conservative and site-neutral: copy buttons,
+ * aria-hidden decorative nodes, and clearly marked line-number gutters are
+ * removed. Mutation is safe: these functions only ever run on cloned or
+ * detached DOM.
  */
 import type { CodeBlock } from "../../core";
 
@@ -11,7 +12,13 @@ const LANGUAGE_CLASS_PATTERN =
 
 const LINE_NUMBER_MARKER = /line-?number/i;
 
-/** Detect a language hint from code/pre class attributes (first match wins). */
+/**
+ * Detect a language hint (first match wins). Sources:
+ * 1. the nested <code> element's class,
+ * 2. the <pre> element's class,
+ * 3. the <pre> parent's class (common syntax-highlighter convention, e.g.
+ *    GitHub's `highlight highlight-source-python` wrapper).
+ */
 export function detectLanguageHint(
   codeElement: Element | null,
   preElement: Element,
@@ -19,6 +26,7 @@ export function detectLanguageHint(
   const classSources = [
     codeElement?.getAttribute("class") ?? "",
     preElement.getAttribute("class") ?? "",
+    preElement.parentElement?.getAttribute("class") ?? "",
   ];
   for (const className of classSources) {
     for (const token of className.split(/\s+/)) {

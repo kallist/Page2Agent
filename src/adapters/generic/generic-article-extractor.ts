@@ -33,7 +33,7 @@ import type {
   WebSourceDescriptor,
 } from "../../core";
 import { extractMetadata } from "./article-metadata";
-import { domToBlocks } from "./dom-to-blocks";
+import { domToBlocks } from "../../shared/dom/blocks";
 
 const SUPPORTED_PROTOCOLS = new Set(["http:", "https:"]);
 

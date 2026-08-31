@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { domToBlocks, getNormalizedText } from "../../../../src/adapters/generic/dom-to-blocks";
+import { domToBlocks } from "../../../../src/shared/dom/blocks";
+import { getNormalizedText } from "../../../../src/shared/dom/text";
 import type { ContentBlock } from "../../../../src/core";
 import { FIXTURE_BASE_URL, loadHtml } from "../../../helpers/load-html-fixture";
 

@@ -81,6 +81,22 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/adapters/github/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@mozilla/readability"],
+              message: "GitHub adapter must not depend on Readability.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["vite.config.ts", "vite.content.config.ts", "scripts/**/*.mjs", "tests/**/*.ts"],
     languageOptions: {
       globals: { ...globals.node },

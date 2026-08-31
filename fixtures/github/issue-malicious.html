@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Malicious body · Issue #66 · acme/page2agent-demo · GitHub</title>
+</head>
+<body>
+  <div class="gh-header">
+    <div class="gh-header-title">
+      <bdi class="js-issue-title">Malicious body</bdi>
+    </div>
+  </div>
+  <div class="js-timeline-item">
+    <div class="timeline-comment">
+      <div class="comment-body markdown-body js-comment-body">
+        <p>Safe visible text.</p>
+        <script>globalThis.__PAGE2AGENT_GITHUB_SCRIPT_RAN__ = true; alert("x")</script>
+        <a href="javascript:alert(1)">click</a>
+        <img src="data:image/png;base64,AAAA">
+        <p onclick="globalThis.__PAGE2AGENT_GITHUB_HANDLER_RAN__ = true">Text with handler.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

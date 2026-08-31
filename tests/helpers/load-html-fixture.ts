@@ -10,11 +10,13 @@ export const FIXTURE_BASE_URL = "https://example.com/docs/page";
 export const FIXTURE_CAPTURED_AT = "2026-08-31T00:00:00.000Z";
 
 /**
- * Fixtures live at <repo root>/fixtures/generic. process.cwd() is the npm
- * script working directory (repo root); import.meta.url is NOT usable here
- * because in the jsdom test environment it is a Vite dev-server URL.
+ * Fixtures live at <repo root>/fixtures/generic and fixtures/github.
+ * process.cwd() is the npm script working directory (repo root);
+ * import.meta.url is NOT usable here because in the jsdom test environment it
+ * is a Vite dev-server URL.
  */
 const GENERIC_FIXTURES_DIR = resolve("fixtures", "generic");
+const GITHUB_FIXTURES_DIR = resolve("fixtures", "github");
 
 /**
  * Load a synthetic HTML fixture with jsdom. Scripts are never executed and
@@ -22,6 +24,17 @@ const GENERIC_FIXTURES_DIR = resolve("fixtures", "generic");
  */
 export function loadFixture(fileName: string, url: string = FIXTURE_BASE_URL): Document {
   const html = readFileSync(resolve(GENERIC_FIXTURES_DIR, fileName), "utf8");
+  return new JSDOM(html, { url }).window.document;
+}
+
+/** GitHub Issue fixture base URL (identity used in fixtures and tests). */
+export const GITHUB_FIXTURE_BASE_URL = "https://github.com/acme/page2agent-demo/issues/123";
+
+export function loadGitHubFixture(
+  fileName: string,
+  url: string = GITHUB_FIXTURE_BASE_URL,
+): Document {
+  const html = readFileSync(resolve(GITHUB_FIXTURES_DIR, fileName), "utf8");
   return new JSDOM(html, { url }).window.document;
 }
 

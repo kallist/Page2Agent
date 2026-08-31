@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fix capture state regression · Issue #123 · acme/page2agent-demo · GitHub</title>
+  <link rel="canonical" href="https://github.com/acme/page2agent-demo/issues/123">
+</head>
+<body>
+  <div class="repo-header">
+    <h1>acme/page2agent-demo</h1>
+  </div>
+  <div class="gh-header">
+    <div class="gh-header-title">
+      <span class="issue-number">#123</span>
+      <bdi class="js-issue-title">Fix capture state regression</bdi>
+    </div>
+    <div class="gh-header-meta">
+      opened this issue
+      <relative-time datetime="2026-08-15T09:00:00.000Z">Aug 15, 2026</relative-time>
+    </div>
+    <div class="js-issue-labels">
+      <a class="IssueLabel" href="/acme/page2agent-demo/labels/bug"><span>bug</span></a>
+      <a class="IssueLabel" href="/acme/page2agent-demo/labels/extension">extension</a>
+      <span aria-hidden="true">helper junk</span>
+    </div>
+  </div>
+  <div class="js-timeline-item">
+    <div class="timeline-comment">
+      <div class="timeline-comment-header">
+        <a class="author" href="/ada">ada</a> opened this issue
+      </div>
+      <div class="comment-body markdown-body js-comment-body">
+        <p>The side panel shows stale capture results after a second capture.</p>
+        <h2>Steps to reproduce</h2>
+        <ol>
+          <li>Open <a href="/acme/page2agent-demo">the demo repo</a></li>
+          <li>Run a capture</li>
+        </ol>
+        <blockquote>
+          <p>Only reproducible in Chrome.</p>
+        </blockquote>
+        <pre><code class="language-js">const result = capture();</code></pre>
+        <p><img src="https://user-images.githubusercontent.com/123/example.png" alt="stale panel"></p>
+        <table>
+          <thead>
+            <tr><th>Capture</th><th>Result</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>First</td><td>OK</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>No comments yet</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

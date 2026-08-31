@@ -4,7 +4,7 @@ import {
   detectLanguageHint,
   extractCodeBlock,
   tidyCodeWhitespace,
-} from "../../../../src/adapters/generic/code-block";
+} from "../../../../src/shared/dom/code-block";
 import { loadHtml } from "../../../helpers/load-html-fixture";
 
 function preFrom(html: string): Element {
