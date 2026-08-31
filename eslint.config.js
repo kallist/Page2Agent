@@ -55,8 +55,35 @@ export default tseslint.config(
           patterns: [
             { group: ["react", "react-dom"], message: "Core domain must not depend on React." },
             {
+              group: [
+                "../extension/**",
+                "../../extension/**",
+                "src/extension/**",
+                "../adapters/**",
+                "../../adapters/**",
+                "src/adapters/**",
+                "../application/**",
+                "../../application/**",
+                "src/application/**",
+              ],
+              message: "Core domain must not import extension, adapter, or application code.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/application/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["react", "react-dom"], message: "Application must not depend on React." },
+            {
               group: ["../extension/**", "../../extension/**", "src/extension/**"],
-              message: "Core domain must not import extension runtime code.",
+              message: "Application must not import extension runtime code.",
             },
           ],
         },

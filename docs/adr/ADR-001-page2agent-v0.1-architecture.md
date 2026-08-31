@@ -708,6 +708,15 @@ Domain
 Adapters implement core-defined contracts. Core never imports React or Side
 Panel components.
 
+Agent package construction and agent-ready serialization belong to the
+application/orchestration layer (introduced in TASK 06). That layer may
+consume Core domain objects and pure normalized-source semantics exported by
+source adapters (e.g. Source Acceptance Criteria extraction); Core never
+imports adapters or the application layer. Serialization of canonical domain
+objects to source Markdown remains in Core. Agent-ready output structurally
+separates Page2Agent Agent Instructions from source facts, and treats all
+source material as untrusted reference content.
+
 ## Alternatives Considered
 
 - **Alternative A — DOM → Markdown directly.** Rejected: Markdown becomes the

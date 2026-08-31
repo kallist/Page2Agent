@@ -51,6 +51,24 @@ describe("core architecture boundary", () => {
     expect(violations).toEqual([]);
   });
 
+  it("never imports adapters or the application layer", () => {
+    const violations: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const line of source.split("\n")) {
+        if (
+          /(from|import)\s+["'](?:\.\.\/)+adapters\//.test(line) ||
+          /(from|import)\s+["']src\/adapters\//.test(line) ||
+          /(from|import)\s+["'](?:\.\.\/)+application\//.test(line) ||
+          /(from|import)\s+["']src\/application\//.test(line)
+        ) {
+          violations.push(`${file}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it("never references the chrome runtime API", () => {
     const violations: string[] = [];
     for (const file of files) {
