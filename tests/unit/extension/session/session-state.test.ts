@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAPTURE_STALE_AFTER_MS,
   CAPTURE_OUTCOME_KEY_PREFIX,
   captureOutcomeKey,
   isCaptureIntentStale,

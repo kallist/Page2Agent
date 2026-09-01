@@ -22,9 +22,16 @@ function configureSidePanel(): void {
     });
 }
 
-chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (!isCaptureRequest(message)) {
     // Unknown or malformed message: ignore, never respond as something else.
+    return false;
+  }
+  // Sender trust: only extension-owned contexts may trigger a capture action.
+  // (Content-script senders report a web-page sender URL; extension pages
+  // report a chrome-extension:// URL even when hosted in a browser tab.)
+  const fromExtensionPage = sender.url?.startsWith("chrome-extension://") === true;
+  if (sender.tab !== undefined && !fromExtensionPage) {
     return false;
   }
   // Explicit async response pattern: keep the channel open with `return true`
