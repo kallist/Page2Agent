@@ -11,7 +11,7 @@
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-  "permissions": ["activeTab", "scripting", "sidePanel"],
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self';"
   }

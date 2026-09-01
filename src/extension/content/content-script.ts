@@ -1,21 +1,15 @@
 /**
- * Programmatically injected Content Script — MV3 foundation (TASK 02).
- *
- * Proves the round-trip: Service Worker → programmatic injection → this
- * script executes in the page's isolated world → validated response.
- *
- * No extraction, no DOM reading, no capture. This script is bundled as a
- * self-contained IIFE (vite.content.config.ts) so repeated injection never
- * depends on shared chunks.
+ * Programmatically injected Content Script — production capture runtime
+ * (TASK 07). Runs in the page's isolated world; never in the MAIN world.
  *
  * Repeated injection safety: the initializer registers the message listener
  * at most once per isolated world using a globalThis flag. The flag lives in
  * the extension isolated world and never touches the page's JS namespace.
+ *
+ * This script is bundled as a self-contained IIFE (vite.content.config.ts) so
+ * repeated injection never depends on shared chunks.
  */
-import {
-  CONTENT_RUNTIME_CHECK_SUCCESS,
-  isContentRuntimeCheckRequest,
-} from "../messaging/runtime-messages";
+import { handleContentCaptureRequest, createProductionRegistry } from "./content-capture";
 import type { MessageListener } from "./listener";
 
 export const CONTENT_SCRIPT_READY_FLAG = "__PAGE2AGENT_CONTENT_SCRIPT_READY__";
@@ -57,21 +51,30 @@ export function createGlobalInitializationState(): InitializationState {
   };
 }
 
-export function handleMessage(
-  message: unknown,
-  _sender: chrome.runtime.MessageSender,
-  sendResponse: (response?: unknown) => void,
-): void {
-  if (!isContentRuntimeCheckRequest(message)) {
-    // Unknown or malformed message: do not respond.
-    return;
-  }
-  sendResponse({ type: CONTENT_RUNTIME_CHECK_SUCCESS, requestId: message.requestId });
+/**
+ * Production content listener: any content.capture.request is handled through
+ * the testable handler; unknown messages are ignored (never respond as
+ * something else). `return true` keeps the channel open for the async reply.
+ */
+export function createContentMessageListener(): MessageListener {
+  const registry = createProductionRegistry();
+  return (message, _sender, sendResponse) => {
+    void handleContentCaptureRequest(message, {
+      locationHref: () => location.href,
+      document,
+      registry,
+    }).then(sendResponse);
+    return true;
+  };
 }
 
 // The chrome runtime always exists in the extension isolated world. The guard
 // keeps this module importable in non-browser test environments (Node/vitest),
 // where the initialization logic is exercised through initializeOnce() directly.
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage !== undefined) {
-  initializeOnce(createGlobalInitializationState(), chrome.runtime.onMessage, handleMessage);
+  initializeOnce(
+    createGlobalInitializationState(),
+    chrome.runtime.onMessage,
+    createContentMessageListener(),
+  );
 }

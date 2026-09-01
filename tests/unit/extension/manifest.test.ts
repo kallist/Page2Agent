@@ -30,7 +30,7 @@ function loadPackageJson(): { name?: string; version?: string } {
   ) as { name?: string; version?: string };
 }
 
-const REQUIRED_PERMISSIONS = ["activeTab", "scripting", "sidePanel"];
+const REQUIRED_PERMISSIONS = ["activeTab", "scripting", "sidePanel", "storage"];
 
 const FORBIDDEN_PERMISSIONS = [
   "cookies",
@@ -39,7 +39,6 @@ const FORBIDDEN_PERMISSIONS = [
   "webRequest",
   "downloads",
   "nativeMessaging",
-  "storage",
   "tabs",
 ];
 
@@ -57,7 +56,7 @@ describe("manifest.json", () => {
     expect(manifest.version).toBe(pkg.version);
   });
 
-  it("declares the exact foundation permissions", () => {
+  it("declares the exact least-privilege permissions", () => {
     expect(manifest.permissions).toBeDefined();
     for (const permission of REQUIRED_PERMISSIONS) {
       expect(manifest.permissions).toContain(permission);

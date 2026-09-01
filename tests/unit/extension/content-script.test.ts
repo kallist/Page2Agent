@@ -1,9 +1,9 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { CONTENT_RUNTIME_CHECK_SUCCESS } from "../../../src/extension/messaging/runtime-messages";
 import {
   CONTENT_SCRIPT_READY_FLAG,
+  createContentMessageListener,
   createGlobalInitializationState,
-  handleMessage,
   initializeOnce,
 } from "../../../src/extension/content/content-script";
 import type { MessageListener } from "../../../src/extension/content/listener";
@@ -44,35 +44,14 @@ describe("content script global initialization state", () => {
   });
 });
 
-describe("content script message handler", () => {
-  it("responds with success and echoes the requestId for a valid request", () => {
+describe("production content message listener", () => {
+  it("answers unknown messages with a safe INVALID_MESSAGE failure", async () => {
+    const listener = createContentMessageListener();
     const sendResponse = vi.fn();
-    handleMessage(
-      { type: "content.runtimeCheck.request", requestId: "req-1" },
-      {} as chrome.runtime.MessageSender,
-      sendResponse,
-    );
-
-    expect(sendResponse).toHaveBeenCalledTimes(1);
-    expect(sendResponse).toHaveBeenCalledWith({
-      type: CONTENT_RUNTIME_CHECK_SUCCESS,
-      requestId: "req-1",
-    });
-  });
-
-  it("does not respond to unknown or malformed messages", () => {
-    const sendResponse = vi.fn();
-    for (const message of [
-      null,
-      "hello",
-      42,
-      { type: "content.runtimeCheck.request" },
-      { type: "runtime.check.request", requestId: "req-1" },
-      { type: "content.runtimeCheck.request", requestId: "", extra: true },
-    ]) {
-      handleMessage(message, {} as chrome.runtime.MessageSender, sendResponse);
-    }
-
-    expect(sendResponse).not.toHaveBeenCalled();
+    const result = listener("not-a-message", {} as chrome.runtime.MessageSender, sendResponse);
+    expect(result).toBe(true);
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledTimes(1));
+    const response = sendResponse.mock.calls[0][0];
+    expect(response).toMatchObject({ type: "content.capture.failure", error: { code: "INVALID_MESSAGE" } });
   });
 });

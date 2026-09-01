@@ -15,7 +15,11 @@ const FORBIDDEN_PERMISSIONS = [
   "webRequest",
   "downloads",
   "nativeMessaging",
+  "tabs",
 ];
+
+/** Exactly the least-privilege set this stage genuinely uses. */
+const REQUIRED_PERMISSIONS = ["activeTab", "scripting", "sidePanel", "storage"];
 
 const failures = [];
 function check(condition, message) {
@@ -105,10 +109,19 @@ if (existsSync(manifestPath)) {
     );
   }
 
-  // 11. storage is not requested before this stage actually uses it.
+  // 11. The exact least-privilege permission set is present (storage is now
+  //     genuinely used for chrome.storage.session).
+  for (const permission of REQUIRED_PERMISSIONS) {
+    check(
+      permissions.includes(permission),
+      `manifest is missing required permission: ${permission}`,
+    );
+  }
   check(
-    !permissions.includes("storage"),
-    "manifest requests storage permission (not used in this stage)",
+    permissions.every((permission) =>
+      [...REQUIRED_PERMISSIONS, ...FORBIDDEN_PERMISSIONS].includes(permission),
+    ),
+    `manifest requests an unexpected permission: ${permissions.join(", ")}`,
   );
 
   // 12. No source map artifacts.

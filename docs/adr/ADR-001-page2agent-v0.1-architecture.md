@@ -408,6 +408,16 @@ State classification:
 V0.1 must NOT persist full user webpage content by default. This is a privacy
 decision.
 
+TASK 07 activated the `storage` permission for `chrome.storage.session` (the
+ADR-planned session-scoped state): it holds only the latest capture session
+state (capturing / captured result / error) under a single versioned key. The
+Side Panel writes the capturing marker BEFORE sending `capture.request`, and
+the Service Worker commits a result/error only via compare-before-write
+(latest capture wins; stale completions never overwrite). Captured content
+never enters `chrome.storage.local`/sync and no capture history is stored.
+Markdown downloads use Blob + object URL + anchor, so no `downloads`
+permission is needed.
+
 ### Concurrency Model
 
 Recorded up front:

@@ -1,78 +1,35 @@
 /**
- * MV3 Service Worker — extension orchestration foundation (TASK 02).
+ * MV3 Service Worker — production capture orchestration (TASK 07).
  *
- * Responsibilities (only):
+ * Responsibilities:
  *  1. Configure Side Panel action behavior.
- *  2. Receive validated foundation runtime messages.
- *  3. Find the current active tab.
- *  4. Programmatically inject the content script.
- *  5. Perform a minimal round-trip with the content script.
- *  6. Return a sanitized result to the Side Panel.
+ *  2. Receive validated capture.request messages from the Side Panel.
+ *  3. Delegate to the capture orchestrator (active tab → injection → content
+ *     round-trip → packaging → session commit).
  *
- * No extraction, no PageContext, no capture state, no long-lived global job
- * state. The service worker is not a durable process.
+ * No durable in-memory capture state: the worker may suspend/restart at any
+ * time; the latest-capture source of truth is chrome.storage.session.
  */
-import {
-  CONTENT_RUNTIME_CHECK_REQUEST,
-  isContentRuntimeCheckSuccess,
-  isRuntimeCheckRequest,
-  RUNTIME_CHECK_FAILURE,
-  RUNTIME_CHECK_SUCCESS,
-} from "../messaging/runtime-messages";
-import type { RuntimeCheckFailure, RuntimeCheckSuccess } from "../messaging/runtime-messages";
-
-const ACCESS_DENIED_MESSAGE = "Current page cannot be accessed by the extension.";
+import { handleCaptureRequest, chromeCaptureRuntimeDeps } from "./capture";
+import { isCaptureRequest } from "../messaging/runtime-messages";
 
 function configureSidePanel(): void {
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error: unknown) => {
-      // Foundation limitation: keep the worker alive; never surface raw errors
-      // to the UI and never log page data.
+      // Keep the worker alive; never surface raw errors to the UI.
       console.warn("Page2Agent: side panel action behavior could not be configured.", error);
     });
 }
 
-async function runRuntimeCheck(
-  requestId: string,
-): Promise<RuntimeCheckSuccess | RuntimeCheckFailure> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id === undefined) {
-    return { type: RUNTIME_CHECK_FAILURE, requestId, message: ACCESS_DENIED_MESSAGE };
-  }
-
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["assets/content-script.js"],
-    });
-  } catch {
-    // Restricted pages (chrome://, edge://, Web Store, ...) cannot be injected.
-    return { type: RUNTIME_CHECK_FAILURE, requestId, message: ACCESS_DENIED_MESSAGE };
-  }
-
-  try {
-    const response: unknown = await chrome.tabs.sendMessage(tab.id, {
-      type: CONTENT_RUNTIME_CHECK_REQUEST,
-      requestId,
-    });
-    if (isContentRuntimeCheckSuccess(response) && response.requestId === requestId) {
-      return { type: RUNTIME_CHECK_SUCCESS, requestId };
-    }
-    return { type: RUNTIME_CHECK_FAILURE, requestId, message: ACCESS_DENIED_MESSAGE };
-  } catch {
-    return { type: RUNTIME_CHECK_FAILURE, requestId, message: ACCESS_DENIED_MESSAGE };
-  }
-}
-
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-  if (!isRuntimeCheckRequest(message)) {
+  if (!isCaptureRequest(message)) {
     // Unknown or malformed message: ignore, never respond as something else.
     return false;
   }
   // Explicit async response pattern: keep the channel open with `return true`
   // and respond later. Compatible with MV3 on Chrome and Edge.
-  void runRuntimeCheck(message.requestId).then(sendResponse);
+  void handleCaptureRequest(message, chromeCaptureRuntimeDeps).then(sendResponse);
   return true;
 });
 

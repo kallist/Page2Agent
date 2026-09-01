@@ -38,8 +38,10 @@ export default tseslint.config(
   {
     files: [
       "src/extension/background/**/*.ts",
+      "src/extension/capture/**/*.ts",
       "src/extension/content/**/*.ts",
       "src/extension/messaging/**/*.ts",
+      "src/extension/session/**/*.ts",
       "src/extension/sidepanel/**/*.{ts,tsx}",
     ],
     languageOptions: {
