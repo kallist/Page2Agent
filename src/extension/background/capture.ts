@@ -36,10 +36,10 @@ import type { CaptureFailure, CaptureSuccess } from "../messaging/runtime-messag
 import { isSameCapturedPage } from "../messaging/page-url";
 import {
   chromeSessionStorage,
-  commitCaptureErrorIfCurrent,
-  commitCaptureResultIfCurrent,
+  writeCaptureOutcome,
 } from "../session/session-storage";
 import type { SessionStorage } from "../session/session-storage";
+import type { CaptureOutcome } from "../session/session-state";
 
 export interface TabInfo {
   id?: number;
@@ -127,17 +127,17 @@ export async function handleCaptureRequest(
   }
 
   if (isContentCaptureFailure(response)) {
-    await commitErrorSafely(deps, captureId, response.error);
+    await writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error: response.error });
     return { type: CAPTURE_FAILURE, captureId, error: response.error };
   }
   if (!isContentCaptureSuccessEnvelope(response)) {
     const error = failureView(Page2AgentErrorCode.INVALID_MESSAGE);
-    await commitErrorSafely(deps, captureId, error);
+    await writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error });
     return { type: CAPTURE_FAILURE, captureId, error };
   }
   if (!isNormalizedDocument(response.document)) {
     const error = failureView(Page2AgentErrorCode.INVALID_DOCUMENT);
-    await commitErrorSafely(deps, captureId, error);
+    await writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error });
     return { type: CAPTURE_FAILURE, captureId, error };
   }
 
@@ -156,11 +156,23 @@ export async function handleCaptureRequest(
 
   try {
     const result = buildCaptureResult(response.document, context);
-    await commitCaptureResultIfCurrent(deps.storage, captureId, result);
+    // Ownership model: the worker writes ONLY its own per-capture outcome key.
+    // The latest intent key is owned by the Side Panel and is never touched
+    // here, so a stale worker can never revert the latest user intent.
+    const outcomeWritten = await writeOutcomeSafely(deps, {
+      schemaVersion: 1,
+      status: "captured",
+      captureId,
+      result,
+    });
+    if (!outcomeWritten) {
+      const error = failureView(Page2AgentErrorCode.CAPTURE_FAILED);
+      return { type: CAPTURE_FAILURE, captureId, error };
+    }
     return { type: CAPTURE_SUCCESS, captureId, result };
   } catch (error) {
     const safeError = toCaptureErrorView(error);
-    await commitErrorSafely(deps, captureId, safeError);
+    await writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error: safeError });
     return { type: CAPTURE_FAILURE, captureId, error: safeError };
   }
 }
@@ -212,18 +224,23 @@ function failure(
   code: Page2AgentErrorCode,
 ): CaptureFailure {
   const error = failureView(code);
-  void commitErrorSafely(deps, captureId, error);
+  void writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error });
   return { type: CAPTURE_FAILURE, captureId, error };
 }
 
-async function commitErrorSafely(
+/**
+ * Write this capture's outcome to its own per-capture key. Returns false when
+ * the storage write fails (the panel then sees CAPTURE_FAILED and the restore
+ * path stays recoverable).
+ */
+async function writeOutcomeSafely(
   deps: CaptureRuntimeDeps,
-  captureId: string,
-  error: CaptureErrorView,
-): Promise<void> {
+  outcome: CaptureOutcome,
+): Promise<boolean> {
   try {
-    await commitCaptureErrorIfCurrent(deps.storage, captureId, error);
+    await writeCaptureOutcome(deps.storage, outcome);
+    return true;
   } catch {
-    // Storage failure must not mask the original error.
+    return false;
   }
 }

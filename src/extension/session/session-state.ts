@@ -1,33 +1,50 @@
 /**
- * Capture session state — extension-owned, chrome.storage.session only.
- * Versioned; validated from `unknown` on every read (schema drift, partial
- * writes, extension updates).
+ * Capture session model — extension-owned, chrome.storage.session only.
+ *
+ * Ownership model (TASK 08 hardening):
+ * - `LatestCaptureIntent` lives under a single key and is written ONLY by the
+ *   Side Panel (the user click order is the source of truth). Workers never
+ *   write it, so a stale worker can never revert the latest user intent.
+ * - `CaptureOutcome` lives under a per-capture key and is written ONLY by the
+ *   Service Worker handling that capture. Per-capture keys never collide, so
+ *   no compare-and-swap is needed and no TOCTOU window exists.
+ *
+ * Correctness never depends on cleanup; cleanup is hygiene only.
  */
 import { isCaptureErrorView, isCaptureResult } from "../capture/capture-result";
 import type { CaptureErrorView, CaptureResult } from "../capture/capture-result";
 
-export const CAPTURE_SESSION_SCHEMA_VERSION = 1 as const;
-export const CAPTURE_SESSION_KEY = "page2agent.capture.v1";
+export const CAPTURE_SCHEMA_VERSION = 1 as const;
 
-export type CaptureSessionState =
+export const LATEST_CAPTURE_KEY = "page2agent.latest-capture.v1";
+export const CAPTURE_OUTCOME_KEY_PREFIX = "page2agent.capture-result.v1.";
+
+/** How old an intent may be before restore treats it as interrupted. */
+export const CAPTURE_STALE_AFTER_MS = 120_000;
+
+export interface LatestCaptureIntent {
+  schemaVersion: typeof CAPTURE_SCHEMA_VERSION;
+  captureId: string;
+  startedAt: string;
+}
+
+export type CaptureOutcome =
   | {
-      schemaVersion: typeof CAPTURE_SESSION_SCHEMA_VERSION;
-      status: "capturing";
-      captureId: string;
-      startedAt: string;
-    }
-  | {
-      schemaVersion: typeof CAPTURE_SESSION_SCHEMA_VERSION;
+      schemaVersion: typeof CAPTURE_SCHEMA_VERSION;
       status: "captured";
       captureId: string;
       result: CaptureResult;
     }
   | {
-      schemaVersion: typeof CAPTURE_SESSION_SCHEMA_VERSION;
+      schemaVersion: typeof CAPTURE_SCHEMA_VERSION;
       status: "error";
       captureId: string;
       error: CaptureErrorView;
     };
+
+export function captureOutcomeKey(captureId: string): string {
+  return `${CAPTURE_OUTCOME_KEY_PREFIX}${captureId}`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -42,20 +59,25 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-export function isCaptureSessionState(value: unknown): value is CaptureSessionState {
+export function isLatestCaptureIntent(value: unknown): value is LatestCaptureIntent {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["schemaVersion", "captureId", "startedAt"]) &&
+    value.schemaVersion === CAPTURE_SCHEMA_VERSION &&
+    isNonEmptyString(value.captureId) &&
+    isNonEmptyString(value.startedAt)
+  );
+}
+
+export function isCaptureOutcome(value: unknown): value is CaptureOutcome {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== CAPTURE_SESSION_SCHEMA_VERSION ||
+    value.schemaVersion !== CAPTURE_SCHEMA_VERSION ||
     !isNonEmptyString(value.captureId)
   ) {
     return false;
   }
   switch (value.status) {
-    case "capturing":
-      return (
-        hasOnlyKeys(value, ["schemaVersion", "status", "captureId", "startedAt"]) &&
-        isNonEmptyString(value.startedAt)
-      );
     case "captured":
       return (
         hasOnlyKeys(value, ["schemaVersion", "status", "captureId", "result"]) &&
@@ -69,4 +91,17 @@ export function isCaptureSessionState(value: unknown): value is CaptureSessionSt
     default:
       return false;
   }
+}
+
+/** Pure staleness check (no timers; evaluated at restore/state read time). */
+export function isCaptureIntentStale(
+  intent: LatestCaptureIntent,
+  nowIso: string,
+): boolean {
+  const started = Date.parse(intent.startedAt);
+  const now = Date.parse(nowIso);
+  if (Number.isNaN(started) || Number.isNaN(now)) {
+    return true; // unparseable timestamps are treated as stale
+  }
+  return now - started > CAPTURE_STALE_AFTER_MS;
 }

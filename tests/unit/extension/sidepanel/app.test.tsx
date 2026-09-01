@@ -3,9 +3,12 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../../../../src/extension/sidepanel/App";
+import {
+  INTERRUPTED_CAPTURE_MESSAGE,
+} from "../../../../src/extension/sidepanel/capture-session";
 import type { CaptureSessionDeps } from "../../../../src/extension/sidepanel/capture-session";
-import { CAPTURE_SESSION_KEY } from "../../../../src/extension/session/session-state";
-import type { CaptureSessionState } from "../../../../src/extension/session/session-state";
+import type { LatestCaptureIntent } from "../../../../src/extension/session/session-state";
+import type { CaptureOutcome } from "../../../../src/extension/session/session-state";
 import type { CaptureResult } from "../../../../src/extension/capture/capture-result";
 
 afterEach(() => {
@@ -32,21 +35,27 @@ function makeResult(overrides: Partial<CaptureResult> = {}): CaptureResult {
 }
 
 interface FakeDepsOptions {
-  readSessionValue?: unknown;
+  intent?: LatestCaptureIntent | null;
+  outcomeFor?: (captureId: string) => CaptureOutcome | null;
   sendResponse?: unknown;
   sendRejects?: boolean;
   captureIds?: string[];
+  nowValue?: string;
+  /** When set, writeIntent calls return these deferred promises in order. */
+  deferredIntentWrites?: boolean;
 }
 
 function makeDeps(options: FakeDepsOptions = {}): {
   deps: CaptureSessionDeps;
   sentRequests: string[];
-  writtenStates: CaptureSessionState[];
+  intentWrites: LatestCaptureIntent[];
   unsubscribe: ReturnType<typeof vi.fn>;
+  resolveIntentWrites: Array<() => void>;
 } {
   const sentRequests: string[] = [];
-  const writtenStates: CaptureSessionState[] = [];
+  const intentWrites: LatestCaptureIntent[] = [];
   const unsubscribe = vi.fn();
+  const resolveIntentWrites: Array<() => void> = [];
   let idIndex = 0;
   const captureIds = options.captureIds ?? ["c1", "c2", "c3"];
 
@@ -58,21 +67,37 @@ function makeDeps(options: FakeDepsOptions = {}): {
       }
       return options.sendResponse;
     },
-    readSession: async () => options.readSessionValue ?? null,
-    writeSession: async (value: CaptureSessionState) => {
-      writtenStates.push(value);
+    readIntent: async () => options.intent ?? null,
+    writeIntent: async (intent: LatestCaptureIntent) => {
+      intentWrites.push(intent);
+      if (options.deferredIntentWrites === true) {
+        await new Promise<void>((resolve) => {
+          resolveIntentWrites.push(resolve);
+        });
+      }
     },
+    readOutcome: async (captureId: string) => options.outcomeFor?.(captureId) ?? null,
+    cleanupOutcomes: async () => undefined,
     subscribeSessionChanges: (_listener: () => void) => {
       return unsubscribe;
     },
-    now: () => "2026-08-31T00:00:00.000Z",
+    now: () => options.nowValue ?? "2026-08-31T00:00:00.000Z",
     createCaptureId: () => {
       const id = captureIds[idIndex % captureIds.length];
       idIndex += 1;
       return id;
     },
   };
-  return { deps, sentRequests, writtenStates, unsubscribe };
+  return { deps, sentRequests, intentWrites, unsubscribe, resolveIntentWrites };
+}
+
+function capturedOutcome(intent: LatestCaptureIntent, overrides: Partial<CaptureResult> = {}): CaptureOutcome {
+  return {
+    schemaVersion: 1,
+    status: "captured",
+    captureId: intent.captureId,
+    result: makeResult({ captureId: intent.captureId, ...overrides }),
+  };
 }
 
 describe("Side Panel — Idle", () => {
@@ -85,15 +110,13 @@ describe("Side Panel — Idle", () => {
 });
 
 describe("Side Panel — Capturing", () => {
-  it("shows the capturing state while a request is in flight", async () => {
+  it("shows the capturing state and writes the intent before sending", async () => {
     const user = userEvent.setup();
     let resolveSend: ((value: unknown) => void) | undefined;
     const sendPromise = new Promise<unknown>((resolve) => {
       resolveSend = resolve;
     });
-    const { deps, sentRequests, writtenStates } = makeDeps({
-      sendResponse: undefined,
-    });
+    const { deps, sentRequests, intentWrites } = makeDeps();
     deps.sendCaptureRequest = async (captureId: string) => {
       sentRequests.push(captureId);
       return sendPromise;
@@ -102,13 +125,8 @@ describe("Side Panel — Capturing", () => {
 
     await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
 
+    expect(intentWrites[0]).toMatchObject({ schemaVersion: 1, captureId: "c1" });
     expect(sentRequests).toEqual(["c1"]);
-    expect(writtenStates[0]).toEqual({
-      schemaVersion: 1,
-      status: "capturing",
-      captureId: "c1",
-      startedAt: "2026-08-31T00:00:00.000Z",
-    });
     expect(screen.getByText("Capturing current page…")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Capture Again" })).toBeTruthy();
 
@@ -125,11 +143,7 @@ describe("Side Panel — Captured", () => {
   it("shows a generic captured view with stats, action label and Agent tab default", async () => {
     const user = userEvent.setup();
     const { deps } = makeDeps({
-      sendResponse: {
-        type: "capture.success",
-        captureId: "c1",
-        result: makeResult(),
-      },
+      sendResponse: { type: "capture.success", captureId: "c1", result: makeResult() },
     });
     render(<App deps={deps} />);
     await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
@@ -193,11 +207,7 @@ describe("Side Panel — Captured", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const { deps } = makeDeps({
-      sendResponse: {
-        type: "capture.success",
-        captureId: "c1",
-        result: makeResult({ agentContext: fullContext }),
-      },
+      sendResponse: { type: "capture.success", captureId: "c1", result: makeResult({ agentContext: fullContext }) },
     });
     render(<App deps={deps} />);
     await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
@@ -213,18 +223,13 @@ describe("Side Panel — Captured", () => {
       clipboard: { writeText: vi.fn().mockRejectedValue(new DOMException("denied")) },
     });
     const { deps } = makeDeps({
-      sendResponse: {
-        type: "capture.success",
-        captureId: "c1",
-        result: makeResult(),
-      },
+      sendResponse: { type: "capture.success", captureId: "c1", result: makeResult() },
     });
     render(<App deps={deps} />);
     await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
 
     await user.click(screen.getByRole("button", { name: "Copy for Agent" }));
     expect(screen.getByText("Could not copy to the clipboard. Please try again.")).toBeTruthy();
-    // Captured view is retained.
     expect(screen.getByText("Example Article")).toBeTruthy();
   });
 
@@ -289,12 +294,33 @@ describe("Side Panel — Error", () => {
 });
 
 describe("Side Panel — concurrency", () => {
+  it("serializes intent writes in click order even when writes complete late", async () => {
+    const user = userEvent.setup();
+    const { deps, sentRequests, intentWrites, resolveIntentWrites } = makeDeps({
+      captureIds: ["a", "b"],
+      deferredIntentWrites: true,
+      sendResponse: { type: "capture.success", captureId: "b", result: makeResult({ captureId: "b", title: "Result B" }) },
+    });
+    render(<App deps={deps} />);
+    await user.click(screen.getByRole("button", { name: "Capture Current Page" })); // A
+    await user.click(screen.getByRole("button", { name: "Capture Again" })); // B
+
+    // The queue starts A's write; B's write must wait.
+    expect(intentWrites.map((intent) => intent.captureId)).toEqual(["a"]);
+    expect(sentRequests).toEqual([]); // requests wait for their own intent write
+
+    resolveIntentWrites.shift()?.(); // A's write completes
+    await vi.waitFor(() => expect(intentWrites.map((intent) => intent.captureId)).toEqual(["a", "b"]));
+    resolveIntentWrites.shift()?.(); // B's write completes
+    await vi.waitFor(() => expect(sentRequests).toEqual(["a", "b"]));
+
+    expect(await screen.findByText("Result B")).toBeTruthy();
+  });
+
   it("ignores a stale success response after a newer capture", async () => {
     const user = userEvent.setup();
     const { deps, sentRequests } = makeDeps({
       captureIds: ["a", "b"],
-      // First request (a) resolves AFTER the second (b) was issued: same
-      // response is returned for both, but the gate must keep b.
       sendResponse: {
         type: "capture.success",
         captureId: "b",
@@ -306,22 +332,16 @@ describe("Side Panel — concurrency", () => {
     await user.click(screen.getByRole("button", { name: "Capture Again" }));
 
     expect(sentRequests).toEqual(["a", "b"]);
-    // Latest view reflects capture b (identical responses; captureId gate keeps b).
-    expect(screen.getByText("Result B")).toBeTruthy();
+    expect(await screen.findByText("Result B")).toBeTruthy();
   });
 });
 
 describe("Side Panel — session restore", () => {
-  it("restores a captured session on mount without a capture request", async () => {
-    const captured: CaptureSessionState = {
-      schemaVersion: 1,
-      status: "captured",
-      captureId: "old-1",
-      result: makeResult({ captureId: "old-1", title: "Restored Title" }),
-    };
-    const stored: Record<string, unknown> = { [CAPTURE_SESSION_KEY]: captured };
+  it("restores a captured session from intent + outcome without a capture request", async () => {
+    const intent: LatestCaptureIntent = { schemaVersion: 1, captureId: "old-1", startedAt: "t0" };
     const { deps, sentRequests } = makeDeps({
-      readSessionValue: stored[CAPTURE_SESSION_KEY],
+      intent,
+      outcomeFor: () => capturedOutcome(intent, { title: "Restored Title" }),
     });
     render(<App deps={deps} />);
 
@@ -331,20 +351,39 @@ describe("Side Panel — session restore", () => {
   });
 
   it("restores an error state with Capture Again", async () => {
-    const errorState: CaptureSessionState = {
+    const intent: LatestCaptureIntent = { schemaVersion: 1, captureId: "e1", startedAt: "t0" };
+    const outcome: CaptureOutcome = {
       schemaVersion: 1,
       status: "error",
       captureId: "e1",
       error: { code: "NO_CONTENT_FOUND", message: "Unable to find meaningful page content." },
     };
-    render(<App deps={makeDeps({ readSessionValue: errorState }).deps} />);
+    render(<App deps={makeDeps({ intent, outcomeFor: () => outcome }).deps} />);
     expect(await screen.findByText("Unable to find meaningful page content.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Capture Again" })).toBeTruthy();
   });
 
+  it("shows the interrupted-capture retry message for a stale intent without an outcome", async () => {
+    const staleStartedAt = new Date(Date.now() - 121_000).toISOString();
+    const intent: LatestCaptureIntent = { schemaVersion: 1, captureId: "dead-1", startedAt: staleStartedAt };
+    const { deps } = makeDeps({ intent, outcomeFor: () => null, nowValue: new Date().toISOString() });
+    render(<App deps={deps} />);
+    expect(await screen.findByText(INTERRUPTED_CAPTURE_MESSAGE)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Capture Again" })).toBeTruthy();
+  });
+
+  it("shows capturing for a fresh intent without an outcome", async () => {
+    const intent: LatestCaptureIntent = { schemaVersion: 1, captureId: "live-1", startedAt: "2026-08-31T00:00:00.000Z" };
+    const { deps } = makeDeps({ intent, outcomeFor: () => null });
+    render(<App deps={deps} />);
+    expect(await screen.findByText("Capturing current page…")).toBeTruthy();
+  });
+
   it("ignores malformed stored state and shows Idle", async () => {
-    render(<App deps={makeDeps({ readSessionValue: { garbage: true } }).deps} />);
-    expect(screen.getByText("No page captured yet.")).toBeTruthy();
+    const { deps } = makeDeps();
+    deps.readIntent = async () => ({ garbage: true });
+    render(<App deps={deps} />);
+    expect(await screen.findByText("No page captured yet.")).toBeTruthy();
   });
 
   it("subscribes to session changes and unsubscribes on unmount", async () => {

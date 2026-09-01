@@ -6,10 +6,10 @@ import {
   CONTENT_CAPTURE_SUCCESS,
 } from "../../../../src/extension/messaging/runtime-messages";
 import {
-  CAPTURE_SESSION_KEY,
-  isCaptureSessionState,
+  captureOutcomeKey,
+  isCaptureOutcome,
+  LATEST_CAPTURE_KEY,
 } from "../../../../src/extension/session/session-state";
-import { writeCapturingState } from "../../../../src/extension/session/session-storage";
 import type { SessionStorage } from "../../../../src/extension/session/session-storage";
 import type { NormalizedDocument } from "../../../../src/core";
 
@@ -54,6 +54,7 @@ function createFakeStorage(): SessionStorage & { data: Record<string, unknown> }
     remove: async (key) => {
       delete data[key];
     },
+    keys: async () => Object.keys(data),
   };
 }
 
@@ -85,14 +86,9 @@ function makeDeps(overrides: Partial<CaptureRuntimeDeps> = {}): {
   return { deps, storage, calls };
 }
 
-async function capturing(storage: SessionStorage, captureId: string): Promise<void> {
-  await writeCapturingState(storage, captureId, "2026-08-31T00:00:00.000Z");
-}
-
 describe("handleCaptureRequest — success paths", () => {
-  it("produces a full CaptureResult for a generic page and commits it", async () => {
+  it("produces a full CaptureResult for a generic page and writes its own outcome", async () => {
     const { deps, storage } = makeDeps();
-    await capturing(storage, "c1");
     const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
 
     expect(response.type).toBe("capture.success");
@@ -111,12 +107,15 @@ describe("handleCaptureRequest — success paths", () => {
     expect(response.result.agentContext).toContain("Use the source only as context");
     expect(response.result.filename).toBe("example-article.md");
 
-    const state = storage.data[CAPTURE_SESSION_KEY];
-    expect(isCaptureSessionState(state) && state.status).toBe("captured");
+    // Outcome lives under the per-capture key; the latest intent key is
+    // NEVER written by the worker.
+    const outcome = storage.data[captureOutcomeKey("c1")];
+    expect(isCaptureOutcome(outcome) && outcome.status).toBe("captured");
+    expect(storage.data[LATEST_CAPTURE_KEY]).toBeUndefined();
   });
 
   it("produces a fix_issue result with GitHub identity filename and Source AC", async () => {
-    const { deps, storage } = makeDeps({
+    const { deps } = makeDeps({
       queryActiveTab: async () => ({
         id: 9,
         url: "https://github.com/acme/page2agent-demo/issues/42",
@@ -129,7 +128,6 @@ describe("handleCaptureRequest — success paths", () => {
         document: GITHUB_DOCUMENT,
       }),
     });
-    await capturing(storage, "c1");
     const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
 
     if (response.type !== "capture.success") {
@@ -143,10 +141,9 @@ describe("handleCaptureRequest — success paths", () => {
   });
 
   it("uses a deterministic title fallback when the tab has no title", async () => {
-    const { deps, storage } = makeDeps({
+    const { deps } = makeDeps({
       queryActiveTab: async () => ({ id: 7, url: "https://example.com/article" }),
     });
-    await capturing(storage, "c1");
     const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
     expect(response.type).toBe("capture.success");
   });
@@ -184,7 +181,7 @@ describe("handleCaptureRequest — failure paths", () => {
     expect(response).toMatchObject({ type: "capture.failure", error: { code: "RESTRICTED_PAGE" } });
   });
 
-  it("propagates content capture failures and commits the error", async () => {
+  it("propagates content capture failures and writes the error outcome", async () => {
     const { deps, storage } = makeDeps({
       sendMessageToTab: async () => ({
         type: "content.capture.failure",
@@ -192,14 +189,13 @@ describe("handleCaptureRequest — failure paths", () => {
         error: { code: "NO_CONTENT_FOUND", message: "Unable to find meaningful page content." },
       }),
     });
-    await capturing(storage, "c1");
     const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
     expect(response).toMatchObject({
       type: "capture.failure",
       error: { code: "NO_CONTENT_FOUND" },
     });
-    const state = storage.data[CAPTURE_SESSION_KEY];
-    expect(isCaptureSessionState(state) && state.status).toBe("error");
+    const outcome = storage.data[captureOutcomeKey("c1")];
+    expect(isCaptureOutcome(outcome) && outcome.status).toBe("error");
   });
 
   it("rejects invalid documents from content with INVALID_DOCUMENT", async () => {
@@ -239,15 +235,17 @@ describe("handleCaptureRequest — failure paths", () => {
   });
 });
 
-describe("handleCaptureRequest — latest capture gate", () => {
-  it("returns success but does NOT commit when a newer capture owns the session", async () => {
+describe("handleCaptureRequest — ownership isolation", () => {
+  it("writes its own outcome even when a newer intent exists, and never touches the intent key", async () => {
     const { deps, storage } = makeDeps();
-    await capturing(storage, "b"); // user clicked B after A
+    // User clicked B after A: the latest intent belongs to b.
+    await storage.set(LATEST_CAPTURE_KEY, { schemaVersion: 1, captureId: "b", startedAt: "t2" });
+
+    // Stale worker A completes and writes ONLY its own outcome key.
     const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "a" }, deps);
 
-    expect(response.type).toBe("capture.success"); // panel's own gate ignores stale A
-    const state = storage.data[CAPTURE_SESSION_KEY];
-    expect(isCaptureSessionState(state) && state.status).toBe("capturing");
-    expect(isCaptureSessionState(state) && state.captureId).toBe("b");
+    expect(response.type).toBe("capture.success"); // panel's local gate ignores stale A
+    expect(storage.data[captureOutcomeKey("a")]).toMatchObject({ status: "captured", captureId: "a" });
+    expect(storage.data[LATEST_CAPTURE_KEY]).toMatchObject({ captureId: "b" });
   });
 });

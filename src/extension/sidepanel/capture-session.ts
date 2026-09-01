@@ -1,16 +1,23 @@
 /**
- * Side Panel capture session controller.
+ * Side Panel capture session controller (TASK 08 ownership model).
  *
- * Latest-capture-wins lives here too:
- *  - the panel writes the capturing marker to chrome.storage.session BEFORE
- *    sending capture.request (user click order is the source of truth),
- *  - responses are accepted only when their captureId still matches the local
- *    latest id (double protection with the worker's compare-before-write).
+ * The Side Panel OWNS the latest capture intent:
+ *  - intent writes are serialized through a queue so durable intent order
+ *    always matches the user click order,
+ *  - the local latestCaptureIdRef gate immediately ignores stale responses,
+ *  - restore reads only the latest intent's per-capture outcome.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CAPTURE_REQUEST, isCaptureFailure, isCaptureSuccess } from "../messaging/runtime-messages";
-import { CAPTURE_SESSION_KEY, isCaptureSessionState } from "../session/session-state";
-import type { CaptureSessionState } from "../session/session-state";
+import {
+  isCaptureIntentStale,
+  LATEST_CAPTURE_KEY,
+  isLatestCaptureIntent,
+  isCaptureOutcome,
+} from "../session/session-state";
+import type { LatestCaptureIntent } from "../session/session-state";
+import { chromeSessionStorage, createSerializedIntentWriter, readCaptureOutcome, removeAllOutcomes } from "../session/session-storage";
+import type { IntentWriter } from "../session/session-storage";
 import { Page2AgentErrorCode, userSafeMessage } from "../../core";
 import type { CaptureErrorView, CaptureResult } from "../capture/capture-result";
 
@@ -22,8 +29,10 @@ export type CaptureViewState =
 
 export interface CaptureSessionDeps {
   sendCaptureRequest(captureId: string): Promise<unknown>;
-  readSession(): Promise<unknown>;
-  writeSession(value: CaptureSessionState): Promise<void>;
+  readIntent(): Promise<unknown>;
+  writeIntent(intent: LatestCaptureIntent): Promise<void>;
+  readOutcome(captureId: string): Promise<unknown>;
+  cleanupOutcomes(): Promise<void>;
   subscribeSessionChanges(listener: () => void): () => void;
   now(): string;
   createCaptureId(): string;
@@ -34,58 +43,82 @@ export interface CaptureSessionController {
   capture(): Promise<void>;
 }
 
+export const INTERRUPTED_CAPTURE_MESSAGE = "Previous capture was interrupted. Capture the page again.";
+
 export function useCaptureSession(deps: CaptureSessionDeps): CaptureSessionController {
   const [view, setView] = useState<CaptureViewState>({ status: "idle" });
   const latestIdRef = useRef<string | null>(null);
+  const intentWriterRef = useRef<IntentWriter | null>(null);
 
-  const applySessionState = useCallback((raw: unknown): void => {
-    const state = isCaptureSessionState(raw) ? raw : null;
-    if (state === null) {
+  if (intentWriterRef.current === null) {
+    // Serialized intent writes: click order == durable order.
+    intentWriterRef.current = createSerializedIntentWriter(async (intent) => {
+      await deps.cleanupOutcomes();
+      await deps.writeIntent(intent);
+    });
+  }
+
+  const restoreFromStorage = useCallback(async (): Promise<void> => {
+    const rawIntent = await deps.readIntent();
+    if (!isLatestCaptureIntent(rawIntent)) {
       setView({ status: "idle" });
       return;
     }
-    latestIdRef.current = state.captureId;
-    if (state.status === "captured") {
-      setView({ status: "captured", captureId: state.captureId, result: state.result });
-    } else if (state.status === "error") {
-      setView({ status: "error", captureId: state.captureId, error: state.error });
-    } else {
-      setView({ status: "capturing", captureId: state.captureId });
-    }
-  }, []);
+    const intent = rawIntent;
+    latestIdRef.current = intent.captureId;
 
-  // Restore the session on mount.
-  useEffect(() => {
-    let cancelled = false;
-    void deps.readSession().then((raw) => {
-      if (!cancelled) {
-        applySessionState(raw);
+    const rawOutcome = await deps.readOutcome(intent.captureId);
+    if (isCaptureOutcome(rawOutcome)) {
+      if (rawOutcome.status === "captured") {
+        setView({ status: "captured", captureId: intent.captureId, result: rawOutcome.result });
+      } else {
+        setView({ status: "error", captureId: intent.captureId, error: rawOutcome.error });
       }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [deps, applySessionState]);
+      return;
+    }
 
-  // Follow worker commits (e.g. when the panel re-opened during capturing).
+    if (isCaptureIntentStale(intent, deps.now())) {
+      setView({
+        status: "error",
+        captureId: intent.captureId,
+        error: {
+          code: Page2AgentErrorCode.CAPTURE_FAILED,
+          message: INTERRUPTED_CAPTURE_MESSAGE,
+        },
+      });
+      return;
+    }
+    // Fresh intent with no outcome yet: still in flight (or worker restarted).
+    setView({ status: "capturing", captureId: intent.captureId });
+  }, [deps]);
+
+  // Restore on mount and follow session changes (worker outcomes, intent writes).
+  // Deferred off the synchronous effect body to avoid direct setState in the
+  // effect (react-hooks rule) — the restore is inherently asynchronous anyway.
+  useEffect(() => {
+    queueMicrotask(() => {
+      void restoreFromStorage();
+    });
+  }, [restoreFromStorage]);
+
   useEffect(() => {
     return deps.subscribeSessionChanges(() => {
-      void deps.readSession().then(applySessionState);
+      void restoreFromStorage();
     });
-  }, [deps, applySessionState]);
+  }, [deps, restoreFromStorage]);
 
   const capture = useCallback(async (): Promise<void> => {
     const captureId = deps.createCaptureId();
     latestIdRef.current = captureId;
     setView({ status: "capturing", captureId });
 
+    const intent: LatestCaptureIntent = {
+      schemaVersion: 1,
+      captureId,
+      startedAt: deps.now(),
+    };
     try {
-      await deps.writeSession({
-        schemaVersion: 1,
-        status: "capturing",
-        captureId,
-        startedAt: deps.now(),
-      });
+      await intentWriterRef.current?.writeIntent(intent);
     } catch {
       setView({
         status: "error",
@@ -102,7 +135,6 @@ export function useCaptureSession(deps: CaptureSessionDeps): CaptureSessionContr
     try {
       response = await deps.sendCaptureRequest(captureId);
     } catch {
-      // Service Worker unreachable or channel failure.
       setView({
         status: "error",
         captureId,
@@ -114,7 +146,7 @@ export function useCaptureSession(deps: CaptureSessionDeps): CaptureSessionContr
       return;
     }
 
-    // Response gate: only the latest capture may update the UI.
+    // Local response gate: only the latest capture may update the UI.
     if (latestIdRef.current !== captureId) {
       return;
     }
@@ -144,18 +176,17 @@ export function createProductionSessionDeps(): CaptureSessionDeps {
   return {
     sendCaptureRequest: (captureId: string) =>
       chrome.runtime.sendMessage({ type: CAPTURE_REQUEST, captureId }),
-    readSession: async () => {
-      const data = await chrome.storage.session.get(CAPTURE_SESSION_KEY);
-      return data[CAPTURE_SESSION_KEY];
-    },
-    writeSession: (value: CaptureSessionState) =>
-      chrome.storage.session.set({ [CAPTURE_SESSION_KEY]: value }),
+    readIntent: () => chromeSessionStorage.get(LATEST_CAPTURE_KEY),
+    writeIntent: (intent: LatestCaptureIntent) =>
+      chromeSessionStorage.set(LATEST_CAPTURE_KEY, intent),
+    readOutcome: (captureId: string) => readCaptureOutcome(chromeSessionStorage, captureId),
+    cleanupOutcomes: () => removeAllOutcomes(chromeSessionStorage),
     subscribeSessionChanges: (listener: () => void) => {
       const handler = (
         changes: Record<string, chrome.storage.StorageChange>,
         areaName: string,
       ): void => {
-        if (areaName === "session" && CAPTURE_SESSION_KEY in changes) {
+        if (areaName === "session" && Object.keys(changes).length > 0) {
           listener();
         }
       };
