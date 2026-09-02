@@ -292,11 +292,9 @@ describe("GitHubIssueExtractor task lists and code", () => {
       items: [
         "[x] I have searched the existing issues and this bug is not already filed.",
         "[x] I believe this is a legitimate bug, not just a question or feature request.",
-        "[ ] Keep this normal task text unchanged.",
-        "Ordinary list item remains ordinary.",
       ],
     });
-    expect(lists[0]?.items).toHaveLength(4);
+    expect(lists[0]?.items).toHaveLength(2);
     expect(lists[1]).toEqual({
       type: "list",
       ordered: false,
@@ -306,10 +304,7 @@ describe("GitHubIssueExtractor task lists and code", () => {
     expect(JSON.stringify(document.blocks)).not.toContain("While dragging");
     expect(JSON.stringify(document.blocks)).not.toContain("Press space again to drop");
     expect(JSON.stringify(document.blocks)).not.toContain("press escape to cancel");
-    expect(extractSourceAcceptanceCriteria(document.blocks)).toEqual([
-      "[ ] first",
-      "[x] second",
-    ]);
+    expect(extractSourceAcceptanceCriteria(document.blocks)).toBeNull();
     expect(JSON.stringify(document.blocks)).not.toContain(
       "This comment must stay excluded from the issue body.",
     );

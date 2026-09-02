@@ -68,6 +68,30 @@ describe("generic pure pipeline", () => {
 });
 
 describe("github pure pipeline", () => {
+  it("serializes real-derived modern task items cleanly for Agent and Markdown", async () => {
+    const document = await githubPipeline("issue-modern-task-list.html");
+    const expectedTaskList =
+      "- [x] I have searched the existing issues and this bug is not already filed.\n" +
+      "- [x] I believe this is a legitimate bug, not just a question or feature request.";
+    const forbiddenUi = [
+      "[x] [x]",
+      "To pick up a draggable item",
+      "While dragging",
+      "Press space again to drop",
+      "press escape to cancel",
+    ];
+
+    const agentOutput = serializeAgentPackage(buildAgentPackage(document));
+    const sourceMarkdown = serializeNormalizedDocument(document);
+
+    expect(agentOutput).toContain(expectedTaskList);
+    expect(sourceMarkdown).toContain(expectedTaskList);
+    for (const forbidden of forbiddenUi) {
+      expect(agentOutput).not.toContain(forbidden);
+      expect(sourceMarkdown).not.toContain(forbidden);
+    }
+  });
+
   it("packages a github_issue document with explicit source AC", async () => {
     const document = await githubPipeline(
       "issue-with-acceptance-criteria.html",

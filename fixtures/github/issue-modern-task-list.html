@@ -19,31 +19,39 @@
         <div data-testid="markdown-body" class="markdown-body">
           <h3>Do you need to file an issue?</h3>
           <ul class="contains-task-list">
-            <li class="task-list-item">
-              <span aria-hidden="true">[x]</span>
-              <input type="checkbox" class="task-list-item-checkbox" aria-label="Completed task" checked="" disabled="">
-              <span>I have searched the existing issues and this bug is not already filed.</span>
-              <span class="sr-only" data-testid="task-list-drag-instructions">To pick up a draggable item, press the space bar. While dragging, use the arrow keys to move the item. Press space again to drop the item in its new position, or press escape to cancel.</span>
+            <li class="base-task-list-item">
+              <div class="DragAndDropContainer-module__container">
+                <div class="base-list-item">
+                  <div class="TaskListItem-module__task-list-item">
+                    <div data-testid="tasklist-item-0-0">
+                      <div class="TaskListItem-module__task-list-control">
+                        <input type="checkbox" aria-label="Completed task" checked="" disabled="">
+                      </div>
+                      <div class="TaskListItem-module__task-list-html">
+                        I have searched the existing issues and this bug is not already filed.
+                      </div>
+                    </div>
+                  </div>
+                  <div class="TaskListItem-module__task-list-item">
+                    <div data-testid="tasklist-item-0-1">
+                      <div class="TaskListItem-module__task-list-control">
+                        <input type="checkbox" aria-label="Completed task" checked="" disabled="">
+                      </div>
+                      <div class="TaskListItem-module__task-list-html">
+                        I believe this is a legitimate bug, not just a question or feature request.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div id="DndDescribedBy-0" style="display: none">
+                To pick up a draggable item, press the space bar. While dragging, use the arrow keys to move the item. Press space again to drop the item in its new position, or press escape to cancel.
+              </div>
+              <div id="DndLiveRegion-0" role="status" aria-live="assertive"></div>
             </li>
-            <li class="task-list-item">
-              <span aria-hidden="true">[x]</span>
-              <input type="checkbox" class="task-list-item-checkbox" aria-label="Completed task" checked="" disabled="">
-              <span>I believe this is a legitimate bug, not just a question or feature request.</span>
-            </li>
-            <li class="task-list-item">
-              <span aria-hidden="true">[ ]</span>
-              <input type="checkbox" class="task-list-item-checkbox" aria-label="Incomplete task" disabled="">
-              <span>Keep this normal task text unchanged.</span>
-            </li>
-            <li>Ordinary list item remains ordinary.</li>
           </ul>
           <ul>
             <li>Plain unordered list text.</li>
-          </ul>
-          <h3>Acceptance Criteria</h3>
-          <ul class="contains-task-list">
-            <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled=""> first</li>
-            <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" checked="" disabled=""> second</li>
           </ul>
         </div>
       </div>

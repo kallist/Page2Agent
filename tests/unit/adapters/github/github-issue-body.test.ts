@@ -70,4 +70,29 @@ describe("extractIssueBodyBlocks", () => {
       { type: "list", ordered: false, items: ["[x] reproduce"] },
     ]);
   });
+
+  it("preserves modern unchecked task content and discards its outer DnD UI", () => {
+    const root = bodyFrom(
+      '<div class="markdown-body"><ul class="contains-task-list"><li class="base-task-list-item">' +
+        '<div><div data-testid="tasklist-item-2-0"><input type="checkbox" disabled="">' +
+        '<div>Keep <a href="/a/b/issues/2">linked</a> <code>source</code> text.</div></div></div>' +
+        '<div id="DndDescribedBy-2" style="display:none">drag-only text</div>' +
+        '<div id="DndLiveRegion-2" role="status" aria-live="assertive">status-only text</div>' +
+        "</li></ul></div>",
+    );
+    const blocks = extractIssueBodyBlocks(root, "https://github.com/a/b/issues/1");
+
+    expect(blocks).toContainEqual({
+      type: "list",
+      ordered: false,
+      items: ["[ ] Keep linked source text."],
+    });
+    expect(blocks).toContainEqual({
+      type: "link",
+      href: "https://github.com/a/b/issues/2",
+      text: "linked",
+    });
+    expect(JSON.stringify(blocks)).not.toContain("drag-only text");
+    expect(JSON.stringify(blocks)).not.toContain("status-only text");
+  });
 });
