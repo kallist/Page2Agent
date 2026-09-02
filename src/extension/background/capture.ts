@@ -36,6 +36,8 @@ import type { CaptureFailure, CaptureSuccess } from "../messaging/runtime-messag
 import { isSameCapturedPage } from "../messaging/page-url";
 import {
   chromeSessionStorage,
+  readLatestIntent,
+  removeCaptureOutcome,
   writeCaptureOutcome,
 } from "../session/session-storage";
 import type { SessionStorage } from "../session/session-storage";
@@ -48,7 +50,7 @@ export interface TabInfo {
 }
 
 export interface CaptureRuntimeDeps {
-  queryActiveTab(): Promise<TabInfo>;
+  queryActiveTab(windowId: number): Promise<TabInfo>;
   getTab(tabId: number): Promise<TabInfo>;
   injectContentScript(tabId: number): Promise<void>;
   sendMessageToTab(tabId: number, message: unknown): Promise<unknown>;
@@ -56,8 +58,8 @@ export interface CaptureRuntimeDeps {
 }
 
 export const chromeCaptureRuntimeDeps: CaptureRuntimeDeps = {
-  async queryActiveTab(): Promise<TabInfo> {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  async queryActiveTab(windowId: number): Promise<TabInfo> {
+    const [tab] = await chrome.tabs.query({ active: true, windowId });
     return { id: tab?.id, url: tab?.url, title: tab?.title };
   },
   async getTab(tabId: number): Promise<TabInfo> {
@@ -87,14 +89,19 @@ export async function handleCaptureRequest(
       error: failureView(Page2AgentErrorCode.INVALID_MESSAGE),
     };
   }
-  const { captureId } = message;
+  const { captureId, windowId } = message;
 
-  const tab = await deps.queryActiveTab();
+  let tab: TabInfo;
+  try {
+    tab = await deps.queryActiveTab(windowId);
+  } catch {
+    return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
+  }
   if (tab.id === undefined || tab.url === undefined || tab.url.length === 0) {
-    return failure(deps, captureId, Page2AgentErrorCode.CAPTURE_FAILED);
+    return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
   }
   if (isRestrictedPageUrl(tab.url)) {
-    return failure(deps, captureId, Page2AgentErrorCode.RESTRICTED_PAGE);
+    return await failure(deps, captureId, windowId, Page2AgentErrorCode.RESTRICTED_PAGE);
   }
 
   const context: PageContext = {
@@ -105,7 +112,7 @@ export async function handleCaptureRequest(
     capturedAt: new Date().toISOString(),
   };
   if (!isPageContext(context)) {
-    return failure(deps, captureId, Page2AgentErrorCode.CAPTURE_FAILED);
+    return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
   }
 
   try {
@@ -113,7 +120,7 @@ export async function handleCaptureRequest(
   } catch {
     // Injection failures on an already-validated URL are restricted-page class
     // failures (permission/activeTab not granted).
-    return failure(deps, captureId, Page2AgentErrorCode.RESTRICTED_PAGE);
+    return await failure(deps, captureId, windowId, Page2AgentErrorCode.RESTRICTED_PAGE);
   }
 
   let response: unknown;
@@ -123,21 +130,27 @@ export async function handleCaptureRequest(
       context,
     });
   } catch {
-    return failure(deps, captureId, Page2AgentErrorCode.CAPTURE_FAILED);
+    return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
   }
 
   if (isContentCaptureFailure(response)) {
-    await writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error: response.error });
+    if (response.captureId !== captureId) {
+      return await failure(deps, captureId, windowId, Page2AgentErrorCode.INVALID_MESSAGE);
+    }
+    await writeOutcomeSafely(deps, windowId, { schemaVersion: 1, status: "error", captureId, error: response.error });
     return { type: CAPTURE_FAILURE, captureId, error: response.error };
   }
   if (!isContentCaptureSuccessEnvelope(response)) {
     const error = failureView(Page2AgentErrorCode.INVALID_MESSAGE);
-    await writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error });
+    await writeOutcomeSafely(deps, windowId, { schemaVersion: 1, status: "error", captureId, error });
     return { type: CAPTURE_FAILURE, captureId, error };
+  }
+  if (response.captureId !== captureId) {
+    return await failure(deps, captureId, windowId, Page2AgentErrorCode.INVALID_MESSAGE);
   }
   if (!isNormalizedDocument(response.document)) {
     const error = failureView(Page2AgentErrorCode.INVALID_DOCUMENT);
-    await writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error });
+    await writeOutcomeSafely(deps, windowId, { schemaVersion: 1, status: "error", captureId, error });
     return { type: CAPTURE_FAILURE, captureId, error };
   }
 
@@ -145,13 +158,13 @@ export async function handleCaptureRequest(
   try {
     const currentTab = await deps.getTab(tab.id);
     if (currentTab.id === undefined) {
-      return failure(deps, captureId, Page2AgentErrorCode.CAPTURE_FAILED);
+      return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
     }
     if (!isSameCapturedPage(context.url, currentTab.url ?? "")) {
-      return failure(deps, captureId, Page2AgentErrorCode.PAGE_NAVIGATED);
+      return await failure(deps, captureId, windowId, Page2AgentErrorCode.PAGE_NAVIGATED);
     }
   } catch {
-    return failure(deps, captureId, Page2AgentErrorCode.CAPTURE_FAILED);
+    return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
   }
 
   try {
@@ -159,7 +172,7 @@ export async function handleCaptureRequest(
     // Ownership model: the worker writes ONLY its own per-capture outcome key.
     // The latest intent key is owned by the Side Panel and is never touched
     // here, so a stale worker can never revert the latest user intent.
-    const outcomeWritten = await writeOutcomeSafely(deps, {
+    const outcomeWritten = await writeOutcomeSafely(deps, windowId, {
       schemaVersion: 1,
       status: "captured",
       captureId,
@@ -172,7 +185,7 @@ export async function handleCaptureRequest(
     return { type: CAPTURE_SUCCESS, captureId, result };
   } catch (error) {
     const safeError = toCaptureErrorView(error);
-    await writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error: safeError });
+    await writeOutcomeSafely(deps, windowId, { schemaVersion: 1, status: "error", captureId, error: safeError });
     return { type: CAPTURE_FAILURE, captureId, error: safeError };
   }
 }
@@ -218,13 +231,14 @@ function failureView(code: Page2AgentErrorCode): CaptureErrorView {
   return { code, message: userSafeMessage(code) };
 }
 
-function failure(
+async function failure(
   deps: CaptureRuntimeDeps,
   captureId: string,
+  windowId: number,
   code: Page2AgentErrorCode,
-): CaptureFailure {
+): Promise<CaptureFailure> {
   const error = failureView(code);
-  void writeOutcomeSafely(deps, { schemaVersion: 1, status: "error", captureId, error });
+  await writeOutcomeSafely(deps, windowId, { schemaVersion: 1, status: "error", captureId, error });
   return { type: CAPTURE_FAILURE, captureId, error };
 }
 
@@ -235,12 +249,26 @@ function failure(
  */
 async function writeOutcomeSafely(
   deps: CaptureRuntimeDeps,
+  windowId: number,
   outcome: CaptureOutcome,
 ): Promise<boolean> {
   try {
     await writeCaptureOutcome(deps.storage, outcome);
-    return true;
   } catch {
     return false;
   }
+
+  // A stale worker can finish after the Side Panel already cleaned its prior
+  // outcome. Re-check the read-only intent owner after writing and delete only
+  // this worker's now-orphaned outcome. Correctness still comes from the
+  // panel's local latest-ID gate; this step bounds session-only page content.
+  try {
+    const latestIntent = await readLatestIntent(deps.storage, windowId);
+    if (latestIntent !== null && latestIntent.captureId !== outcome.captureId) {
+      await removeCaptureOutcome(deps.storage, outcome.captureId);
+    }
+  } catch {
+    // Hygiene only. A cleanup/read failure must not change the response.
+  }
+  return true;
 }

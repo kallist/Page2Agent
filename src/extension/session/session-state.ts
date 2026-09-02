@@ -2,9 +2,10 @@
  * Capture session model — extension-owned, chrome.storage.session only.
  *
  * Ownership model (TASK 08 hardening):
- * - `LatestCaptureIntent` lives under a single key and is written ONLY by the
- *   Side Panel (the user click order is the source of truth). Workers never
- *   write it, so a stale worker can never revert the latest user intent.
+ * - `LatestCaptureIntent` lives under one key per browser window and is
+ *   written ONLY by that window's Side Panel (the user click order is the
+ *   source of truth). Workers never write it, so a stale worker can never
+ *   revert the latest user intent or cross a window boundary.
  * - `CaptureOutcome` lives under a per-capture key and is written ONLY by the
  *   Service Worker handling that capture. Per-capture keys never collide, so
  *   no compare-and-swap is needed and no TOCTOU window exists.
@@ -16,8 +17,13 @@ import type { CaptureErrorView, CaptureResult } from "../capture/capture-result"
 
 export const CAPTURE_SCHEMA_VERSION = 1 as const;
 
-export const LATEST_CAPTURE_KEY = "page2agent.latest-capture.v1";
+export const LATEST_CAPTURE_KEY_PREFIX = "page2agent.latest-capture.v1.";
 export const CAPTURE_OUTCOME_KEY_PREFIX = "page2agent.capture-result.v1.";
+
+/** One latest-intent namespace per browser window (global Side Panel scope). */
+export function latestCaptureIntentKey(windowId: number): string {
+  return `${LATEST_CAPTURE_KEY_PREFIX}${windowId}`;
+}
 
 /** How old an intent may be before restore treats it as interrupted. */
 export const CAPTURE_STALE_AFTER_MS = 120_000;

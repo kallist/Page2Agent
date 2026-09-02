@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 import {
   captureOutcomeKey,
-  LATEST_CAPTURE_KEY,
+  latestCaptureIntentKey,
 } from "../../../../src/extension/session/session-state";
 import {
   readLatestIntent,
@@ -35,7 +35,6 @@ function createFakeStorage(initial: Record<string, unknown> = {}): SessionStorag
     remove: async (key) => {
       delete data[key];
     },
-    keys: async () => Object.keys(data),
   };
 }
 
@@ -53,6 +52,9 @@ const RESULT_B: CaptureResult = {
   agentContext: "# B",
   filename: "b.md",
 };
+
+const WINDOW_ID = 12;
+const LATEST_CAPTURE_KEY = latestCaptureIntentKey(WINDOW_ID);
 
 describe("TOCTOU: stale worker completion must not revert the latest user intent", () => {
   it("keeps C authoritative when B completes after C's intent was written", async () => {
@@ -89,7 +91,7 @@ describe("TOCTOU: stale worker completion must not revert the latest user intent
     await workerBWrite;
 
     // The latest intent remains C — the worker never wrote the intent key.
-    const intent = await readLatestIntent(storage);
+    const intent = await readLatestIntent(storage, WINDOW_ID);
     expect(intent?.captureId).toBe("c");
     expect(storage.data[LATEST_CAPTURE_KEY]).toMatchObject({ captureId: "c" });
 

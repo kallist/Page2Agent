@@ -24,6 +24,7 @@ export const CONTENT_CAPTURE_FAILURE = "content.capture.failure" as const;
 export interface CaptureRequest {
   type: typeof CAPTURE_REQUEST;
   captureId: string;
+  windowId: number;
 }
 
 /** Service Worker → Side Panel: capture completed with the final result. */
@@ -82,9 +83,12 @@ function isNonEmptyString(value: unknown): value is string {
 export function isCaptureRequest(value: unknown): value is CaptureRequest {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["type", "captureId"]) &&
+    hasOnlyKeys(value, ["type", "captureId", "windowId"]) &&
     value.type === CAPTURE_REQUEST &&
-    isNonEmptyString(value.captureId)
+    isNonEmptyString(value.captureId) &&
+    typeof value.windowId === "number" &&
+    Number.isSafeInteger(value.windowId) &&
+    value.windowId >= 0
   );
 }
 

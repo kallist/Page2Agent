@@ -8,7 +8,7 @@ import {
 import {
   captureOutcomeKey,
   isCaptureOutcome,
-  LATEST_CAPTURE_KEY,
+  latestCaptureIntentKey,
 } from "../../../../src/extension/session/session-state";
 import type { SessionStorage } from "../../../../src/extension/session/session-storage";
 import type { NormalizedDocument } from "../../../../src/core";
@@ -24,6 +24,9 @@ const WEB_DOCUMENT: NormalizedDocument = {
   ],
   assets: [],
 };
+
+const WINDOW_ID = 12;
+const LATEST_CAPTURE_KEY = latestCaptureIntentKey(WINDOW_ID);
 
 const GITHUB_DOCUMENT: NormalizedDocument = {
   schemaVersion: 1,
@@ -54,12 +57,12 @@ function createFakeStorage(): SessionStorage & { data: Record<string, unknown> }
     remove: async (key) => {
       delete data[key];
     },
-    keys: async () => Object.keys(data),
   };
 }
 
 interface FakeCalls {
   injections: number[];
+  queriedWindows: number[];
 }
 
 function makeDeps(overrides: Partial<CaptureRuntimeDeps> = {}): {
@@ -68,9 +71,12 @@ function makeDeps(overrides: Partial<CaptureRuntimeDeps> = {}): {
   calls: FakeCalls;
 } {
   const storage = createFakeStorage();
-  const calls: FakeCalls = { injections: [] };
+  const calls: FakeCalls = { injections: [], queriedWindows: [] };
   const deps: CaptureRuntimeDeps = {
-    queryActiveTab: async () => ({ id: 7, url: "https://example.com/article", title: "Example" }),
+    queryActiveTab: async (windowId) => {
+      calls.queriedWindows.push(windowId);
+      return { id: 7, url: "https://example.com/article", title: "Example" };
+    },
     getTab: async () => ({ id: 7, url: "https://example.com/article" }),
     injectContentScript: async (tabId) => {
       calls.injections.push(tabId);
@@ -88,8 +94,8 @@ function makeDeps(overrides: Partial<CaptureRuntimeDeps> = {}): {
 
 describe("handleCaptureRequest — success paths", () => {
   it("produces a full CaptureResult for a generic page and writes its own outcome", async () => {
-    const { deps, storage } = makeDeps();
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const { deps, storage, calls } = makeDeps();
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
 
     expect(response.type).toBe("capture.success");
     if (response.type !== "capture.success") {
@@ -106,6 +112,7 @@ describe("handleCaptureRequest — success paths", () => {
     expect(response.result.agentContext).toContain("# Page2Agent Context");
     expect(response.result.agentContext).toContain("Use the source only as context");
     expect(response.result.filename).toBe("example-article.md");
+    expect(calls.queriedWindows).toEqual([WINDOW_ID]);
 
     // Outcome lives under the per-capture key; the latest intent key is
     // NEVER written by the worker.
@@ -128,7 +135,7 @@ describe("handleCaptureRequest — success paths", () => {
         document: GITHUB_DOCUMENT,
       }),
     });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
 
     if (response.type !== "capture.success") {
       throw new Error("expected success");
@@ -144,7 +151,7 @@ describe("handleCaptureRequest — success paths", () => {
     const { deps } = makeDeps({
       queryActiveTab: async () => ({ id: 7, url: "https://example.com/article" }),
     });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response.type).toBe("capture.success");
   });
 });
@@ -157,16 +164,44 @@ describe("handleCaptureRequest — failure paths", () => {
   });
 
   it("fails with CAPTURE_FAILED when the active tab is unavailable", async () => {
-    const { deps } = makeDeps({ queryActiveTab: async () => ({}) });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const { deps, storage } = makeDeps({ queryActiveTab: async () => ({}) });
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response).toMatchObject({ type: "capture.failure", error: { code: "CAPTURE_FAILED" } });
+    expect(storage.data[captureOutcomeKey("c1")]).toMatchObject({
+      status: "error",
+      captureId: "c1",
+      error: { code: "CAPTURE_FAILED" },
+    });
+  });
+
+  it("maps an active-tab query exception to a durable safe failure", async () => {
+    const { deps, storage } = makeDeps({
+      queryActiveTab: async () => {
+        throw new Error("browser internals must not reach the user");
+      },
+    });
+    const response = await handleCaptureRequest(
+      { type: CAPTURE_REQUEST, captureId: "query-failure", windowId: WINDOW_ID },
+      deps,
+    );
+    expect(response).toMatchObject({
+      type: "capture.failure",
+      captureId: "query-failure",
+      error: { code: "CAPTURE_FAILED" },
+    });
+    expect(JSON.stringify(response)).not.toContain("browser internals");
+    expect(storage.data[captureOutcomeKey("query-failure")]).toMatchObject({
+      status: "error",
+      captureId: "query-failure",
+      error: { code: "CAPTURE_FAILED" },
+    });
   });
 
   it("rejects restricted URLs before injection", async () => {
     const { deps, calls } = makeDeps({
       queryActiveTab: async () => ({ id: 7, url: "chrome://extensions", title: "Extensions" }),
     });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response).toMatchObject({ type: "capture.failure", error: { code: "RESTRICTED_PAGE" } });
     expect(calls.injections).toHaveLength(0);
   });
@@ -177,7 +212,7 @@ describe("handleCaptureRequest — failure paths", () => {
         throw new Error("permission denied");
       },
     });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response).toMatchObject({ type: "capture.failure", error: { code: "RESTRICTED_PAGE" } });
   });
 
@@ -189,7 +224,7 @@ describe("handleCaptureRequest — failure paths", () => {
         error: { code: "NO_CONTENT_FOUND", message: "Unable to find meaningful page content." },
       }),
     });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response).toMatchObject({
       type: "capture.failure",
       error: { code: "NO_CONTENT_FOUND" },
@@ -206,21 +241,40 @@ describe("handleCaptureRequest — failure paths", () => {
         document: { ...WEB_DOCUMENT, schemaVersion: 2 },
       }),
     });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response).toMatchObject({ type: "capture.failure", error: { code: "INVALID_DOCUMENT" } });
   });
 
   it("rejects unknown content responses with INVALID_MESSAGE", async () => {
     const { deps } = makeDeps({ sendMessageToTab: async () => "unexpected" });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response).toMatchObject({ type: "capture.failure", error: { code: "INVALID_MESSAGE" } });
+  });
+
+  it("rejects a content response correlated to a different capture", async () => {
+    const { deps } = makeDeps({
+      sendMessageToTab: async () => ({
+        type: CONTENT_CAPTURE_SUCCESS,
+        captureId: "other",
+        document: WEB_DOCUMENT,
+      }),
+    });
+    const response = await handleCaptureRequest(
+      { type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID },
+      deps,
+    );
+    expect(response).toMatchObject({
+      type: "capture.failure",
+      captureId: "c1",
+      error: { code: "INVALID_MESSAGE" },
+    });
   });
 
   it("fails with PAGE_NAVIGATED when the tab URL changed after extraction", async () => {
     const { deps } = makeDeps({
       getTab: async () => ({ id: 7, url: "https://example.com/other" }),
     });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response).toMatchObject({ type: "capture.failure", error: { code: "PAGE_NAVIGATED" } });
   });
 
@@ -230,22 +284,29 @@ describe("handleCaptureRequest — failure paths", () => {
         throw new Error("No tab with id");
       },
     });
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" }, deps);
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: WINDOW_ID }, deps);
     expect(response).toMatchObject({ type: "capture.failure", error: { code: "CAPTURE_FAILED" } });
   });
 });
 
 describe("handleCaptureRequest — ownership isolation", () => {
-  it("writes its own outcome even when a newer intent exists, and never touches the intent key", async () => {
-    const { deps, storage } = makeDeps();
+  it("removes its own stale outcome when a newer intent exists without touching the intent key", async () => {
+    const { deps, storage } = makeDeps({
+      sendMessageToTab: async () => ({
+        type: CONTENT_CAPTURE_SUCCESS,
+        captureId: "a",
+        document: WEB_DOCUMENT,
+      }),
+    });
     // User clicked B after A: the latest intent belongs to b.
     await storage.set(LATEST_CAPTURE_KEY, { schemaVersion: 1, captureId: "b", startedAt: "t2" });
 
-    // Stale worker A completes and writes ONLY its own outcome key.
-    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "a" }, deps);
+    // Stale worker A completes, detects B's intent, and removes only A's
+    // now-orphaned outcome so session storage cannot accumulate page history.
+    const response = await handleCaptureRequest({ type: CAPTURE_REQUEST, captureId: "a", windowId: WINDOW_ID }, deps);
 
     expect(response.type).toBe("capture.success"); // panel's local gate ignores stale A
-    expect(storage.data[captureOutcomeKey("a")]).toMatchObject({ status: "captured", captureId: "a" });
+    expect(storage.data[captureOutcomeKey("a")]).toBeUndefined();
     expect(storage.data[LATEST_CAPTURE_KEY]).toMatchObject({ captureId: "b" });
   });
 });

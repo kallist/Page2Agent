@@ -409,14 +409,18 @@ V0.1 must NOT persist full user webpage content by default. This is a privacy
 decision.
 
 TASK 07 activated the `storage` permission for `chrome.storage.session` (the
-ADR-planned session-scoped state): it holds only the latest capture session
-state (capturing / captured result / error) under a single versioned key. The
-Side Panel writes the capturing marker BEFORE sending `capture.request`, and
-the Service Worker commits a result/error only via compare-before-write
-(latest capture wins; stale completions never overwrite). Captured content
-never enters `chrome.storage.local`/sync and no capture history is stored.
-Markdown downloads use Blob + object URL + anchor, so no `downloads`
-permission is needed.
+ADR-planned session-scoped state). TASK 08 separated latest user intent from
+per-capture outcomes. TASK 09 additionally scopes the latest-intent key by
+browser window and carries that window ID in `capture.request`, so concurrent
+global Side Panels cannot overwrite each other's intent or capture the active
+tab from the wrong window. The Side Panel writes its window's capturing intent
+before sending the request; the Service Worker writes only the request's
+per-capture outcome key. A new intent removes only the prior outcome belonging
+to that same window. Captured content never enters `chrome.storage.local`/sync
+and no capture history is stored. A worker that finishes after its window has
+advanced to a newer intent removes only its own now-orphaned outcome. Markdown
+downloads use Blob + object URL + anchor, so no `downloads` permission is
+needed.
 
 ### Concurrency Model
 
@@ -434,8 +438,9 @@ A finishes later
 
 The final UI MUST keep B; stale A must never overwrite it. Every capture is
 conceptually associated with `captureId`, `tabId`, `url`, `capturedAt`.
-Policy: **latest capture wins**. The concrete algorithm is implemented in
-TASK 07; regression tests are finalized in TASK 08.
+Policy: **latest capture wins within each browser window**. The concrete
+intent/outcome ownership algorithm is implemented in TASK 07–09, including a
+deterministic two-window regression.
 
 ### Security Trust Boundary
 

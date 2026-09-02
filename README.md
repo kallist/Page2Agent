@@ -87,13 +87,15 @@ Capture → Extract → Normalize → Package → Deliver
 - All processing happens locally in the extension.
 - No Page2Agent backend, no analytics, no telemetry, no provider API keys,
   and no automatic upload.
-- The latest capture result is stored only in `chrome.storage.session`
-  (cleared when the browser closes); no capture history is kept.
+- Each browser window's latest capture result is stored only in
+  `chrome.storage.session` (cleared when the browser closes); no capture
+  history is kept.
 - Full page content is never written to `chrome.storage.local`.
 
 ## Permissions
 
-- `activeTab` — access the current page after the user triggers a capture.
+- `activeTab` — temporary page access granted when the user invokes the
+  Page2Agent extension action on that tab.
 - `scripting` — programmatic content-script injection.
 - `sidePanel` — the Side Panel UI.
 - `storage` — session-only capture state.

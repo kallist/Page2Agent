@@ -1,18 +1,18 @@
 /**
  * chrome.storage.session access for the intent/outcome ownership model.
  *
- * - Latest intent key: Side Panel only (serialized through the intent writer).
+ * - Latest intent key: Side Panel only, namespaced by browser window and
+ *   serialized through that panel instance's intent writer.
  * - Outcome keys: per capture, Service Worker only.
  *
  * Compare-before-write is NOT used: correctness comes from key ownership, not
  * from read-modify-write of a shared key.
  */
 import {
-  CAPTURE_OUTCOME_KEY_PREFIX,
-  LATEST_CAPTURE_KEY,
   captureOutcomeKey,
   isCaptureOutcome,
   isLatestCaptureIntent,
+  latestCaptureIntentKey,
 } from "./session-state";
 import type { CaptureOutcome, LatestCaptureIntent } from "./session-state";
 
@@ -21,8 +21,6 @@ export interface SessionStorage {
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown): Promise<void>;
   remove(key: string): Promise<void>;
-  /** All session keys (production: chrome.storage.session.get(null)). */
-  keys(): Promise<string[]>;
 }
 
 export const chromeSessionStorage: SessionStorage = {
@@ -36,17 +34,14 @@ export const chromeSessionStorage: SessionStorage = {
   async remove(key: string): Promise<void> {
     await chrome.storage.session.remove(key);
   },
-  async keys(): Promise<string[]> {
-    const all = await chrome.storage.session.get(null);
-    return Object.keys(all);
-  },
 };
 
 /** Read + validate the latest intent; invalid/absent → null (never crash). */
 export async function readLatestIntent(
   storage: SessionStorage,
+  windowId: number,
 ): Promise<LatestCaptureIntent | null> {
-  const raw = await storage.get(LATEST_CAPTURE_KEY);
+  const raw = await storage.get(latestCaptureIntentKey(windowId));
   return isLatestCaptureIntent(raw) ? raw : null;
 }
 
@@ -90,16 +85,13 @@ export function createSerializedIntentWriter(
 }
 
 /**
- * Hygiene only: remove all outcome keys. Correctness never depends on this —
- * restore only reads the latest intent's outcome key. Called when a new
- * capture intent is written (the new capture has no outcome yet, so this can
- * never delete the current capture's outcome).
+ * Hygiene only: remove one superseded outcome after its window's new intent is
+ * durable. Correctness never depends on this, and another window's current
+ * outcome is never touched.
  */
-export async function removeAllOutcomes(storage: SessionStorage): Promise<void> {
-  const keys = await storage.keys();
-  for (const key of keys) {
-    if (key.startsWith(CAPTURE_OUTCOME_KEY_PREFIX)) {
-      await storage.remove(key);
-    }
-  }
+export async function removeCaptureOutcome(
+  storage: SessionStorage,
+  captureId: string,
+): Promise<void> {
+  await storage.remove(captureOutcomeKey(captureId));
 }

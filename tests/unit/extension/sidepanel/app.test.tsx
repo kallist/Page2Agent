@@ -77,7 +77,7 @@ function makeDeps(options: FakeDepsOptions = {}): {
       }
     },
     readOutcome: async (captureId: string) => options.outcomeFor?.(captureId) ?? null,
-    cleanupOutcomes: async () => undefined,
+    cleanupOutcome: async () => undefined,
     subscribeSessionChanges: (_listener: () => void) => {
       return unsubscribe;
     },

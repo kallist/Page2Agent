@@ -53,13 +53,14 @@ const RESULT: CaptureResult = {
 
 describe("capture message guards", () => {
   it("accepts valid capture.request and rejects malformed ones", () => {
-    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" })).toBe(true);
+    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: 12 })).toBe(true);
     expect(isCaptureRequest({ type: CAPTURE_REQUEST })).toBe(false);
-    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "" })).toBe(false);
-    expect(isCaptureRequest({ type: "capture.other", captureId: "c1" })).toBe(false);
+    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "", windowId: 12 })).toBe(false);
+    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: -1 })).toBe(false);
+    expect(isCaptureRequest({ type: "capture.other", captureId: "c1", windowId: 12 })).toBe(false);
     expect(isCaptureRequest(null)).toBe(false);
     expect(isCaptureRequest("capture.request")).toBe(false);
-    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", extra: 1 })).toBe(false);
+    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: 12, extra: 1 })).toBe(false);
   });
 
   it("accepts valid capture.success with a valid result", () => {
@@ -115,7 +116,7 @@ describe("capture message guards", () => {
   });
 
   it("never accepts one message type as another", () => {
-    expect(isCaptureRequest({ type: CONTENT_CAPTURE_REQUEST, captureId: "c1" })).toBe(false);
+    expect(isCaptureRequest({ type: CONTENT_CAPTURE_REQUEST, captureId: "c1", windowId: 12 })).toBe(false);
     expect(isContentCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" })).toBe(false);
   });
 });

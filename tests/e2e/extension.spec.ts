@@ -1,15 +1,15 @@
 /**
- * MV3 extension E2E 鈥?deterministic local harness (E2E-B).
+ * MV3 extension E2E — deterministic local harness (E2E-B).
  *
  * Loads dist-e2e/ (production build + test-only host_permissions for the
  * local fixture origin) in a persistent Chromium context and drives the full
  * product flow through the extension's own Side Panel page UI: capture
- * intent 鈫?service worker 鈫?content script extraction 鈫?storage 鈫?UI restore.
+ * intent → service worker → content script extraction → storage → UI restore.
  *
  * The harness replaces the activeTab grant (GUI toolbar/side-panel automation
  * is not reliably possible) with a test-only host permission for the local
  * fixture origin; it therefore does NOT validate the production activeTab
- * grant UX or the native Side Panel container 鈥?those remain manual QA items.
+ * grant UX or the native Side Panel container — those remain manual QA items.
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -97,6 +97,15 @@ async function sessionState(): Promise<Record<string, unknown>> {
   return serviceWorker.evaluate(() => chrome.storage.session.get(null));
 }
 
+function latestIntentFromSession(
+  session: Record<string, unknown>,
+): { captureId: string } | undefined {
+  const key = Object.keys(session).find((candidate) =>
+    candidate.startsWith("page2agent.latest-capture.v1."),
+  );
+  return key === undefined ? undefined : session[key] as { captureId: string } | undefined;
+}
+
 /** Click the capture button regardless of the panel's current state. */
 async function clickCapture(): Promise<void> {
   await panel.getByRole("button", { name: /Capture Current Page|Capture Again/ }).click();
@@ -118,7 +127,7 @@ test("generic fixture capture completes end-to-end through the panel UI", async 
   await expect(panel.getByText("Use as context", { exact: true })).toBeVisible();
 
   const session = await sessionState();
-  const intent = session["page2agent.latest-capture.v1"] as { captureId: string } | undefined;
+  const intent = latestIntentFromSession(session);
   expect(intent).toBeTruthy();
   const outcome = session[`page2agent.capture-result.v1.${intent?.captureId}`] as
     | { status: string; captureId: string; result?: { title: string; stats?: { characters: number } } }
@@ -142,7 +151,7 @@ test("repeated capture stays consistent with the latest intent", async () => {
   await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
 
   const session = await sessionState();
-  const intent = session["page2agent.latest-capture.v1"] as { captureId: string } | undefined;
+  const intent = latestIntentFromSession(session);
   expect(intent).toBeTruthy();
   const outcome = session[`page2agent.capture-result.v1.${intent?.captureId}`] as
     | { status: string; captureId: string }
@@ -150,8 +159,8 @@ test("repeated capture stays consistent with the latest intent", async () => {
   expect(outcome?.status).toBe("captured");
   expect(outcome?.captureId).toBe(intent?.captureId);
 
-  // Outcome hygiene: each new capture cleans up old outcomes, so the session
-  // stays bounded (never accumulates one key per capture).
+  // Outcome hygiene removes the prior outcome for this window, so the session
+  // stays bounded without deleting another window's current outcome.
   const outcomeKeys = Object.keys(session).filter((key) => key.startsWith("page2agent.capture-result.v1."));
   expect(outcomeKeys.length).toBeLessThanOrEqual(2);
 
@@ -166,7 +175,7 @@ test("no-content fixture yields a friendly typed failure in the panel", async ()
   await expect(panel.getByRole("button", { name: "Capture Again" })).toBeVisible();
 
   const session = await sessionState();
-  const intent = session["page2agent.latest-capture.v1"] as { captureId: string } | undefined;
+  const intent = latestIntentFromSession(session);
   const outcome = session[`page2agent.capture-result.v1.${intent?.captureId}`] as
     | { status: string; error?: { code: string; message: string } }
     | undefined;
@@ -176,7 +185,6 @@ test("no-content fixture yields a friendly typed failure in the panel", async ()
 
   await fixture.close();
 });
-
 test("a freshly opened panel page restores the latest captured session", async () => {
   const fixture = await openFixture("/generic/article-basic.html");
 
@@ -192,5 +200,4 @@ test("a freshly opened panel page restores the latest captured session", async (
   await fixture.close();
   await restored.close();
 });
-
 
