@@ -3,8 +3,8 @@
  *
  * Loads dist-e2e/ (production build + test-only host_permissions for the
  * local fixture origin) in a persistent Chromium context and drives the full
- * product flow through the extension's own Side Panel page UI: capture
- * intent → service worker → content script extraction → storage → UI restore.
+ * downstream flow through the action controller's explicit E2E seam:
+ * exact tab → capture intent → content script extraction → storage → UI restore.
  *
  * The harness replaces the activeTab grant (GUI toolbar/side-panel automation
  * is not reliably possible) with a test-only host permission for the local
@@ -24,6 +24,11 @@ declare const chrome: {
   runtime: {
     id: string;
     sendMessage(message: unknown): Promise<unknown>;
+  };
+  tabs: {
+    query(queryInfo: { active: boolean; lastFocusedWindow: boolean }): Promise<
+      Array<{ id?: number; windowId: number; url?: string; title?: string }>
+    >;
   };
   storage: {
     session: {
@@ -106,9 +111,28 @@ function latestIntentFromSession(
   return key === undefined ? undefined : session[key] as { captureId: string } | undefined;
 }
 
-/** Click the capture button regardless of the panel's current state. */
-async function clickCapture(): Promise<void> {
-  await panel.getByRole("button", { name: /Capture Current Page|Capture Again/ }).click();
+/**
+ * Emulate chrome.action.onClicked with the exact active tab. This message is
+ * accepted only by dist-e2e/ because its manifest has the localhost-only host
+ * permission; production dist/ rejects the seam and has no persistent host access.
+ */
+async function triggerHarnessAction(): Promise<void> {
+  const response = await panel.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab?.id === undefined || tab.url === undefined) {
+      throw new Error("The E2E active fixture tab could not be resolved.");
+    }
+    return chrome.runtime.sendMessage({
+      type: "harness.capture.request",
+      tab: {
+        id: tab.id,
+        windowId: tab.windowId,
+        url: tab.url,
+        ...(tab.title === undefined ? {} : { title: tab.title }),
+      },
+    });
+  });
+  expect(response).toMatchObject({ type: expect.stringMatching(/^capture\./) });
 }
 
 test("extension service worker activates", async () => {
@@ -121,7 +145,7 @@ test("extension service worker activates", async () => {
 test("generic fixture capture completes end-to-end through the panel UI", async () => {
   const fixture = await openFixture("/generic/article-basic.html");
 
-  await clickCapture();
+  await triggerHarnessAction();
   await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
   await expect(panel.getByText("Web Page", { exact: true })).toBeVisible();
   await expect(panel.getByText("Use as context", { exact: true })).toBeVisible();
@@ -143,11 +167,11 @@ test("generic fixture capture completes end-to-end through the panel UI", async 
 test("repeated capture stays consistent with the latest intent", async () => {
   const fixture = await openFixture("/generic/article-basic.html");
 
-  await clickCapture();
+  await triggerHarnessAction();
   await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
 
-  // Capture Again (button stays enabled; latest capture wins).
-  await clickCapture();
+  // A second action creates a fresh intent; latest capture wins.
+  await triggerHarnessAction();
   await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
 
   const session = await sessionState();
@@ -170,9 +194,9 @@ test("repeated capture stays consistent with the latest intent", async () => {
 test("no-content fixture yields a friendly typed failure in the panel", async () => {
   const fixture = await openFixture("/generic/article-no-content.html");
 
-  await panel.getByRole("button", { name: /Capture/ }).click();
+  await triggerHarnessAction();
   await expect(panel.getByText("Unable to find meaningful page content.")).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Capture Again" })).toBeVisible();
+  await expect(panel.getByText("To capture this page again, click the Page2Agent toolbar icon.")).toBeVisible();
 
   const session = await sessionState();
   const intent = latestIntentFromSession(session);
@@ -188,7 +212,7 @@ test("no-content fixture yields a friendly typed failure in the panel", async ()
 test("a freshly opened panel page restores the latest captured session", async () => {
   const fixture = await openFixture("/generic/article-basic.html");
 
-  await clickCapture();
+  await triggerHarnessAction();
   await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
 
   const restored = await context.newPage();

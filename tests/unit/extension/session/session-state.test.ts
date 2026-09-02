@@ -172,7 +172,7 @@ describe("serialized intent writer (click order == durable order)", () => {
     expect(writes).toEqual(["a", "b"]);
   });
 
-  it("keeps two independent Side Panel writers isolated by window", async () => {
+  it("keeps two independent intent writers isolated by window", async () => {
     const storage = createFakeStorage();
     let finishWindowA: (() => void) | undefined;
     let finishWindowB: (() => void) | undefined;
@@ -228,8 +228,8 @@ describe("ownership model: stale workers can never revert the latest intent", ()
     const outcomeB = { schemaVersion: 1 as const, status: "captured" as const, captureId: "b", result: RESULT };
     const workerBWrite = writeCaptureOutcome(storage, outcomeB);
 
-    // While B's write is in flight, the user clicks C: the panel writes the
-    // new intent (outcome cleanup + intent write happen under the same key).
+    // While B's write is in flight, the user clicks action C: the action
+    // controller writes the new intent under its per-window key.
     await storage.set(LATEST_CAPTURE_KEY, INTENT_C());
     expect(storage.data[LATEST_CAPTURE_KEY]).toMatchObject({ captureId: "c" });
 

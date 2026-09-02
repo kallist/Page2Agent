@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   CAPTURE_FAILURE,
-  CAPTURE_REQUEST,
+  HARNESS_CAPTURE_REQUEST,
   CAPTURE_SUCCESS,
   CONTENT_CAPTURE_FAILURE,
   CONTENT_CAPTURE_REQUEST,
   CONTENT_CAPTURE_SUCCESS,
   isCaptureFailure,
-  isCaptureRequest,
+  isHarnessCaptureRequest,
   isCaptureSuccess,
   isContentCaptureFailure,
   isContentCaptureRequest,
@@ -52,15 +52,17 @@ const RESULT: CaptureResult = {
 };
 
 describe("capture message guards", () => {
-  it("accepts valid capture.request and rejects malformed ones", () => {
-    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: 12 })).toBe(true);
-    expect(isCaptureRequest({ type: CAPTURE_REQUEST })).toBe(false);
-    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "", windowId: 12 })).toBe(false);
-    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: -1 })).toBe(false);
-    expect(isCaptureRequest({ type: "capture.other", captureId: "c1", windowId: 12 })).toBe(false);
-    expect(isCaptureRequest(null)).toBe(false);
-    expect(isCaptureRequest("capture.request")).toBe(false);
-    expect(isCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1", windowId: 12, extra: 1 })).toBe(false);
+  it("accepts an exact E2E harness action tab and rejects malformed ones", () => {
+    const tab = { id: 7, windowId: 12, url: "http://127.0.0.1/article", title: "Article" };
+    expect(isHarnessCaptureRequest({ type: HARNESS_CAPTURE_REQUEST, tab })).toBe(true);
+    expect(isHarnessCaptureRequest({ type: HARNESS_CAPTURE_REQUEST })).toBe(false);
+    expect(isHarnessCaptureRequest({ type: HARNESS_CAPTURE_REQUEST, tab: { ...tab, id: -1 } })).toBe(false);
+    expect(isHarnessCaptureRequest({ type: HARNESS_CAPTURE_REQUEST, tab: { ...tab, windowId: -1 } })).toBe(false);
+    expect(isHarnessCaptureRequest({ type: HARNESS_CAPTURE_REQUEST, tab: { ...tab, url: "" } })).toBe(false);
+    expect(isHarnessCaptureRequest({ type: "capture.other", tab })).toBe(false);
+    expect(isHarnessCaptureRequest(null)).toBe(false);
+    expect(isHarnessCaptureRequest("harness.capture.request")).toBe(false);
+    expect(isHarnessCaptureRequest({ type: HARNESS_CAPTURE_REQUEST, tab, extra: 1 })).toBe(false);
   });
 
   it("accepts valid capture.success with a valid result", () => {
@@ -116,8 +118,8 @@ describe("capture message guards", () => {
   });
 
   it("never accepts one message type as another", () => {
-    expect(isCaptureRequest({ type: CONTENT_CAPTURE_REQUEST, captureId: "c1", windowId: 12 })).toBe(false);
-    expect(isContentCaptureRequest({ type: CAPTURE_REQUEST, captureId: "c1" })).toBe(false);
+    expect(isHarnessCaptureRequest({ type: CONTENT_CAPTURE_REQUEST, context: CONTEXT })).toBe(false);
+    expect(isContentCaptureRequest({ type: HARNESS_CAPTURE_REQUEST, tab: {} })).toBe(false);
   });
 });
 

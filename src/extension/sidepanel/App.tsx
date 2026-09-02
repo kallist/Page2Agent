@@ -18,6 +18,10 @@ type Feedback =
 
 const CLIPBOARD_ERROR_MESSAGE = "Could not copy to the clipboard. Please try again.";
 const DOWNLOAD_ERROR_MESSAGE = "Could not create the Markdown download.";
+export const TOOLBAR_CAPTURE_MESSAGE =
+  "To capture this page, click the Page2Agent toolbar icon.";
+export const TOOLBAR_RECAPTURE_MESSAGE =
+  "To capture this page again, click the Page2Agent toolbar icon.";
 
 /**
  * Production Side Panel product slice (TASK 07): Idle / Capturing / Captured /
@@ -26,7 +30,7 @@ const DOWNLOAD_ERROR_MESSAGE = "Could not create the Markdown download.";
  */
 export default function App({ deps }: { deps?: CaptureSessionDeps }) {
   const sessionDeps = useMemo(() => deps ?? createProductionSessionDeps(), [deps]);
-  const { view, capture } = useCaptureSession(sessionDeps);
+  const { view } = useCaptureSession(sessionDeps);
   const [activeTab, setActiveTab] = useState<"agent" | "markdown">("agent");
   const [feedback, setFeedback] = useState<Feedback>(null);
 
@@ -76,27 +80,20 @@ export default function App({ deps }: { deps?: CaptureSessionDeps }) {
       {view.status === "idle" && (
         <section className="status" aria-label="Extension status">
           <p>No page captured yet.</p>
-          <button type="button" className="primary-action" onClick={() => void capture()}>
-            Capture Current Page
-          </button>
+          <p>{TOOLBAR_CAPTURE_MESSAGE}</p>
         </section>
       )}
 
       {view.status === "capturing" && (
         <section className="status" aria-live="polite">
           <p>Capturing current page…</p>
-          <button type="button" className="primary-action" onClick={() => void capture()}>
-            Capture Again
-          </button>
         </section>
       )}
 
       {view.status === "error" && (
         <section className="status" aria-live="polite">
           <p className="result-error">{view.error.message}</p>
-          <button type="button" className="primary-action" onClick={() => void capture()}>
-            Capture Again
-          </button>
+          <p>{TOOLBAR_RECAPTURE_MESSAGE}</p>
         </section>
       )}
 
@@ -116,7 +113,6 @@ export default function App({ deps }: { deps?: CaptureSessionDeps }) {
           onCopyAgent={() => void handleCopyAgent()}
           onCopyMarkdown={() => void handleCopyMarkdown()}
           onDownload={handleDownload}
-          onCaptureAgain={() => void capture()}
         />
       )}
     </main>
@@ -138,7 +134,6 @@ interface CapturedViewProps {
   onCopyAgent(): void;
   onCopyMarkdown(): void;
   onDownload(): void;
-  onCaptureAgain(): void;
 }
 
 function CapturedView(props: CapturedViewProps) {
@@ -208,10 +203,9 @@ function CapturedView(props: CapturedViewProps) {
         <button type="button" onClick={props.onDownload}>
           Download Markdown
         </button>
-        <button type="button" className="secondary-action" onClick={props.onCaptureAgain}>
-          Capture Again
-        </button>
       </div>
+
+      <p className="recapture-note">{TOOLBAR_RECAPTURE_MESSAGE}</p>
 
       <p className="feedback" role="status" aria-live="polite">
         {props.feedback === "copied-agent" && "Agent context copied."}

@@ -6,7 +6,7 @@
  *   → user clicks C → intent = C → worker B's outcome write lands
  *
  * Under the ownership model the worker only ever writes ITS OWN per-capture
- * outcome key; the latest intent key is Side-Panel-owned, so the assertion
+ * outcome key; the latest intent key is action-controller-owned, so the assertion
  * "C remains authoritative" must PASS here (it FAILED against the TASK 07
  * single-key read→compare→write design).
  */
@@ -83,8 +83,8 @@ describe("TOCTOU: stale worker completion must not revert the latest user intent
       result: RESULT_B,
     });
 
-    // While B's outcome write is in flight, the user clicks C: the panel
-    // writes the new intent (its own key).
+    // While B's outcome write is in flight, the user clicks action C: the
+    // action controller writes the new intent (its own key).
     await storage.set(LATEST_CAPTURE_KEY, { schemaVersion: 1, captureId: "c", startedAt: "t2" });
 
     deferredSet.shift()?.();

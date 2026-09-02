@@ -1,7 +1,7 @@
 /**
  * Service Worker capture orchestration (production runtime).
  *
- * Resolves the active tab, builds PageContext, injects the self-contained
+ * Receives the exact action-clicked tab, builds PageContext, injects the self-contained
  * content script, correlates the validated NormalizedDocument, re-checks page
  * navigation, packages + serializes in the worker, and commits the final
  * CaptureResult through the latest-capture-wins session gate.
@@ -28,7 +28,6 @@ import {
   CAPTURE_FAILURE,
   CAPTURE_SUCCESS,
   CONTENT_CAPTURE_REQUEST,
-  isCaptureRequest,
   isContentCaptureFailure,
   isContentCaptureSuccessEnvelope,
 } from "../messaging/runtime-messages";
@@ -45,12 +44,19 @@ import type { CaptureOutcome } from "../session/session-state";
 
 export interface TabInfo {
   id?: number;
+  windowId?: number;
   url?: string;
   title?: string;
 }
 
+export interface CaptureTarget {
+  id: number;
+  windowId: number;
+  url: string;
+  title?: string;
+}
+
 export interface CaptureRuntimeDeps {
-  queryActiveTab(windowId: number): Promise<TabInfo>;
   getTab(tabId: number): Promise<TabInfo>;
   injectContentScript(tabId: number): Promise<void>;
   sendMessageToTab(tabId: number, message: unknown): Promise<unknown>;
@@ -58,10 +64,6 @@ export interface CaptureRuntimeDeps {
 }
 
 export const chromeCaptureRuntimeDeps: CaptureRuntimeDeps = {
-  async queryActiveTab(windowId: number): Promise<TabInfo> {
-    const [tab] = await chrome.tabs.query({ active: true, windowId });
-    return { id: tab?.id, url: tab?.url, title: tab?.title };
-  },
   async getTab(tabId: number): Promise<TabInfo> {
     const tab = await chrome.tabs.get(tabId);
     return { id: tab.id, url: tab.url, title: tab.title };
@@ -78,37 +80,29 @@ export const chromeCaptureRuntimeDeps: CaptureRuntimeDeps = {
   storage: chromeSessionStorage,
 };
 
-export async function handleCaptureRequest(
-  message: unknown,
+export async function captureExactTab(
+  captureId: string,
+  target: unknown,
   deps: CaptureRuntimeDeps,
 ): Promise<CaptureSuccess | CaptureFailure> {
-  if (!isCaptureRequest(message)) {
+  if (typeof captureId !== "string" || captureId.length === 0 || !isCaptureTarget(target)) {
     return {
       type: CAPTURE_FAILURE,
-      captureId: "unknown",
+      captureId: typeof captureId === "string" && captureId.length > 0 ? captureId : "unknown",
       error: failureView(Page2AgentErrorCode.INVALID_MESSAGE),
     };
   }
-  const { captureId, windowId } = message;
+  const { windowId } = target;
 
-  let tab: TabInfo;
-  try {
-    tab = await deps.queryActiveTab(windowId);
-  } catch {
-    return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
-  }
-  if (tab.id === undefined || tab.url === undefined || tab.url.length === 0) {
-    return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
-  }
-  if (isRestrictedPageUrl(tab.url)) {
+  if (isRestrictedPageUrl(target.url)) {
     return await failure(deps, captureId, windowId, Page2AgentErrorCode.RESTRICTED_PAGE);
   }
 
   const context: PageContext = {
     captureId,
-    tabId: tab.id,
-    url: tab.url,
-    title: tab.title?.trim() || deterministicTitleFallback(tab.url),
+    tabId: target.id,
+    url: target.url,
+    title: target.title?.trim() || deterministicTitleFallback(target.url),
     capturedAt: new Date().toISOString(),
   };
   if (!isPageContext(context)) {
@@ -116,7 +110,7 @@ export async function handleCaptureRequest(
   }
 
   try {
-    await deps.injectContentScript(tab.id);
+    await deps.injectContentScript(target.id);
   } catch {
     // Injection failures on an already-validated URL are restricted-page class
     // failures (permission/activeTab not granted).
@@ -125,7 +119,7 @@ export async function handleCaptureRequest(
 
   let response: unknown;
   try {
-    response = await deps.sendMessageToTab(tab.id, {
+    response = await deps.sendMessageToTab(target.id, {
       type: CONTENT_CAPTURE_REQUEST,
       context,
     });
@@ -156,7 +150,7 @@ export async function handleCaptureRequest(
 
   // Post-capture navigation check: the tab must still exist on the same page.
   try {
-    const currentTab = await deps.getTab(tab.id);
+    const currentTab = await deps.getTab(target.id);
     if (currentTab.id === undefined) {
       return await failure(deps, captureId, windowId, Page2AgentErrorCode.CAPTURE_FAILED);
     }
@@ -170,8 +164,8 @@ export async function handleCaptureRequest(
   try {
     const result = buildCaptureResult(response.document, context);
     // Ownership model: the worker writes ONLY its own per-capture outcome key.
-    // The latest intent key is owned by the Side Panel and is never touched
-    // here, so a stale worker can never revert the latest user intent.
+    // The latest intent key is owned by the action controller and is never
+    // touched here, so a stale capture can never revert the latest intent.
     const outcomeWritten = await writeOutcomeSafely(deps, windowId, {
       schemaVersion: 1,
       status: "captured",
@@ -188,6 +182,26 @@ export async function handleCaptureRequest(
     await writeOutcomeSafely(deps, windowId, { schemaVersion: 1, status: "error", captureId, error: safeError });
     return { type: CAPTURE_FAILURE, captureId, error: safeError };
   }
+}
+
+export function isCaptureTarget(value: unknown): value is CaptureTarget {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  const allowed = new Set(["id", "windowId", "url", "title"]);
+  return (
+    Object.keys(candidate).every((key) => allowed.has(key)) &&
+    typeof candidate.id === "number" &&
+    Number.isSafeInteger(candidate.id) &&
+    candidate.id >= 0 &&
+    typeof candidate.windowId === "number" &&
+    Number.isSafeInteger(candidate.windowId) &&
+    candidate.windowId >= 0 &&
+    typeof candidate.url === "string" &&
+    candidate.url.length > 0 &&
+    (candidate.title === undefined || typeof candidate.title === "string")
+  );
 }
 
 function buildCaptureResult(
@@ -258,10 +272,10 @@ async function writeOutcomeSafely(
     return false;
   }
 
-  // A stale worker can finish after the Side Panel already cleaned its prior
-  // outcome. Re-check the read-only intent owner after writing and delete only
-  // this worker's now-orphaned outcome. Correctness still comes from the
-  // panel's local latest-ID gate; this step bounds session-only page content.
+  // A stale capture can finish after the action controller advanced the
+  // intent. Re-check the read-only intent after writing and delete only this
+  // capture's now-orphaned outcome. The Side Panel independently rejects stale
+  // async restores; this step bounds session-only page content.
   try {
     const latestIntent = await readLatestIntent(deps.storage, windowId);
     if (latestIntent !== null && latestIntent.captureId !== outcome.captureId) {

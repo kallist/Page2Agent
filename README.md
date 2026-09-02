@@ -59,10 +59,13 @@ Edge:
 ## Usage
 
 1. Open a normal webpage (or a GitHub issue).
-2. Click the Page2Agent extension action to open the Side Panel.
-3. Click **Capture Current Page**.
+2. Click the Page2Agent toolbar action on that page.
+3. The native Side Panel opens and capture starts automatically for that exact tab.
 4. Review the **Agent** or **Markdown** preview.
 5. **Copy for Agent**, **Copy Markdown**, or **Download Markdown**.
+
+To capture again—or to capture a different tab—click the toolbar action on the
+target page. The persistent Side Panel does not claim a fresh `activeTab` grant.
 
 For GitHub issues, the action mode is **Fix this issue** — that is an
 agent-ready context action, not direct execution. Page2Agent never runs
@@ -118,8 +121,9 @@ npm run verify:all      verify + E2E
 `npm run test:e2e` uses a **test-only harness** (`dist-e2e/`, gitignored):
 the production build plus a test manifest that grants the local fixture origin
 (`http://127.0.0.1/*`) host access to replace the activeTab grant that GUI
-automation cannot reliably trigger. It does not validate the production
-activeTab grant UX or the native Side Panel container — see below.
+automation cannot reliably trigger. It emulates the action event with the
+exact active fixture tab through a localhost-build-only message, but does not
+validate the production activeTab grant UX or native Side Panel container.
 
 ## Testing
 
@@ -132,9 +136,9 @@ activeTab grant UX or the native Side Panel container — see below.
 
 ## Limitations
 
-- `activeTab` grants expire with the tab/session: if the Side Panel stays open
-  and you switch to a tab that never granted Page2Agent access, capture fails
-  with a friendly message — reopen Page2Agent from the target page.
+- `activeTab` grants expire with navigation/closure. Capture or recapture always
+  starts from a toolbar action on the target page; the persistent Side Panel
+  cannot authorize a newly switched tab by itself.
 - Readability-based extraction is heuristic; app-like or script-rendered-only
   pages may not extract.
 - GitHub DOM changes can break the GitHub adapter over time.

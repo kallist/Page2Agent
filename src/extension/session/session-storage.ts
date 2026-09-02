@@ -1,8 +1,8 @@
 /**
  * chrome.storage.session access for the intent/outcome ownership model.
  *
- * - Latest intent key: Side Panel only, namespaced by browser window and
- *   serialized through that panel instance's intent writer.
+ * - Latest intent key: toolbar-action controller, namespaced by browser window
+ *   and serialized through the current worker lifetime's intent writer.
  * - Outcome keys: per capture, Service Worker only.
  *
  * Compare-before-write is NOT used: correctness comes from key ownership, not
@@ -54,7 +54,7 @@ export async function readCaptureOutcome(
   return isCaptureOutcome(raw) ? raw : null;
 }
 
-/** Worker: write this capture's outcome under its own per-capture key. */
+/** Capture worker: write this capture's outcome under its own per-capture key. */
 export async function writeCaptureOutcome(
   storage: SessionStorage,
   outcome: CaptureOutcome,

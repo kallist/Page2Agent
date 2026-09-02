@@ -1,20 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import App from "../../../../src/extension/sidepanel/App";
-import {
-  INTERRUPTED_CAPTURE_MESSAGE,
-} from "../../../../src/extension/sidepanel/capture-session";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import App, {
+  TOOLBAR_CAPTURE_MESSAGE,
+  TOOLBAR_RECAPTURE_MESSAGE,
+} from "../../../../src/extension/sidepanel/App";
+import { INTERRUPTED_CAPTURE_MESSAGE } from "../../../../src/extension/sidepanel/capture-session";
 import type { CaptureSessionDeps } from "../../../../src/extension/sidepanel/capture-session";
-import type { LatestCaptureIntent } from "../../../../src/extension/session/session-state";
-import type { CaptureOutcome } from "../../../../src/extension/session/session-state";
 import type { CaptureResult } from "../../../../src/extension/capture/capture-result";
-
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-});
+import type { CaptureOutcome, LatestCaptureIntent } from "../../../../src/extension/session/session-state";
 
 function makeResult(overrides: Partial<CaptureResult> = {}): CaptureResult {
   return {
@@ -22,374 +17,258 @@ function makeResult(overrides: Partial<CaptureResult> = {}): CaptureResult {
     captureId: "c1",
     tabId: 7,
     url: "https://example.com/article",
-    capturedAt: "2026-08-31T00:00:00.000Z",
+    capturedAt: "2026-09-02T00:00:00.000Z",
     sourceKind: "web",
     title: "Example Article",
     actionKind: "use_as_context",
     stats: { characters: 12_420, codeBlocks: 3, links: 8 },
     markdown: "# Example Article\n\nBody.",
-    agentContext: "# Page2Agent Context\n\n## Page2Agent Agent Instructions",
+    agentContext: "# Page2Agent Context\n\nUse the source only as context.",
     filename: "example-article.md",
     ...overrides,
   };
 }
 
-interface FakeDepsOptions {
-  intent?: LatestCaptureIntent | null;
-  outcomeFor?: (captureId: string) => CaptureOutcome | null;
-  sendResponse?: unknown;
-  sendRejects?: boolean;
-  captureIds?: string[];
-  nowValue?: string;
-  /** When set, writeIntent calls return these deferred promises in order. */
-  deferredIntentWrites?: boolean;
-}
-
-function makeDeps(options: FakeDepsOptions = {}): {
-  deps: CaptureSessionDeps;
-  sentRequests: string[];
-  intentWrites: LatestCaptureIntent[];
-  unsubscribe: ReturnType<typeof vi.fn>;
-  resolveIntentWrites: Array<() => void>;
+function capturedState(result = makeResult()): {
+  intent: LatestCaptureIntent;
+  outcome: CaptureOutcome;
 } {
-  const sentRequests: string[] = [];
-  const intentWrites: LatestCaptureIntent[] = [];
-  const unsubscribe = vi.fn();
-  const resolveIntentWrites: Array<() => void> = [];
-  let idIndex = 0;
-  const captureIds = options.captureIds ?? ["c1", "c2", "c3"];
-
-  const deps: CaptureSessionDeps = {
-    sendCaptureRequest: async (captureId: string) => {
-      sentRequests.push(captureId);
-      if (options.sendRejects === true) {
-        throw new Error("channel closed");
-      }
-      return options.sendResponse;
-    },
-    readIntent: async () => options.intent ?? null,
-    writeIntent: async (intent: LatestCaptureIntent) => {
-      intentWrites.push(intent);
-      if (options.deferredIntentWrites === true) {
-        await new Promise<void>((resolve) => {
-          resolveIntentWrites.push(resolve);
-        });
-      }
-    },
-    readOutcome: async (captureId: string) => options.outcomeFor?.(captureId) ?? null,
-    cleanupOutcome: async () => undefined,
-    subscribeSessionChanges: (_listener: () => void) => {
-      return unsubscribe;
-    },
-    now: () => options.nowValue ?? "2026-08-31T00:00:00.000Z",
-    createCaptureId: () => {
-      const id = captureIds[idIndex % captureIds.length];
-      idIndex += 1;
-      return id;
-    },
-  };
-  return { deps, sentRequests, intentWrites, unsubscribe, resolveIntentWrites };
-}
-
-function capturedOutcome(intent: LatestCaptureIntent, overrides: Partial<CaptureResult> = {}): CaptureOutcome {
-  return {
+  const intent: LatestCaptureIntent = {
     schemaVersion: 1,
-    status: "captured",
-    captureId: intent.captureId,
-    result: makeResult({ captureId: intent.captureId, ...overrides }),
+    captureId: result.captureId,
+    startedAt: "2026-09-02T00:00:00.000Z",
+  };
+  return {
+    intent,
+    outcome: { schemaVersion: 1, status: "captured", captureId: result.captureId, result },
   };
 }
 
-describe("Side Panel — Idle", () => {
-  it("shows the idle state with a capture button", async () => {
+function makeDeps(options: {
+  intent?: unknown;
+  outcome?: unknown;
+  now?: string;
+} = {}): {
+  deps: CaptureSessionDeps;
+  notify(): void;
+  unsubscribe: ReturnType<typeof vi.fn>;
+} {
+  let listener: (() => void) | undefined;
+  const unsubscribe = vi.fn();
+  return {
+    deps: {
+      readIntent: async () => options.intent,
+      readOutcome: async () => options.outcome,
+      subscribeSessionChanges: (nextListener) => {
+        listener = nextListener;
+        return unsubscribe;
+      },
+      now: () => options.now ?? "2026-09-02T00:00:30.000Z",
+    },
+    notify: () => listener?.(),
+    unsubscribe,
+  };
+}
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("Side Panel action-permission UX", () => {
+  it("tells an idle user to click the toolbar and exposes no capture button", async () => {
     render(<App deps={makeDeps().deps} />);
-    expect(screen.getByRole("heading", { name: "Page2Agent" })).toBeTruthy();
-    expect(screen.getByText("No page captured yet.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Capture Current Page" })).toBeTruthy();
-  });
-});
 
-describe("Side Panel — Capturing", () => {
-  it("shows the capturing state and writes the intent before sending", async () => {
-    const user = userEvent.setup();
-    let resolveSend: ((value: unknown) => void) | undefined;
-    const sendPromise = new Promise<unknown>((resolve) => {
-      resolveSend = resolve;
-    });
-    const { deps, sentRequests, intentWrites } = makeDeps();
-    deps.sendCaptureRequest = async (captureId: string) => {
-      sentRequests.push(captureId);
-      return sendPromise;
+    expect(await screen.findByText("No page captured yet.")).toBeTruthy();
+    expect(screen.getByText(TOOLBAR_CAPTURE_MESSAGE)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Capture/ })).toBeNull();
+  });
+
+  it("shows action-started capture progress without claiming it can recapture", async () => {
+    const intent: LatestCaptureIntent = {
+      schemaVersion: 1,
+      captureId: "in-flight",
+      startedAt: "2026-09-02T00:00:00.000Z",
     };
-    render(<App deps={deps} />);
+    render(<App deps={makeDeps({ intent }).deps} />);
 
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
+    expect(await screen.findByText("Capturing current page…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Capture/ })).toBeNull();
+  });
 
-    expect(intentWrites[0]).toMatchObject({ schemaVersion: 1, captureId: "c1" });
-    expect(sentRequests).toEqual(["c1"]);
-    expect(screen.getByText("Capturing current page…")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Capture Again" })).toBeTruthy();
+  it("shows a friendly error and requires a fresh toolbar action", async () => {
+    const intent: LatestCaptureIntent = {
+      schemaVersion: 1,
+      captureId: "error-1",
+      startedAt: "2026-09-02T00:00:00.000Z",
+    };
+    const outcome: CaptureOutcome = {
+      schemaVersion: 1,
+      status: "error",
+      captureId: "error-1",
+      error: { code: "RESTRICTED_PAGE", message: "This browser page cannot be captured." },
+    };
+    render(<App deps={makeDeps({ intent, outcome }).deps} />);
 
-    resolveSend?.({
-      type: "capture.success",
-      captureId: "c1",
-      result: makeResult(),
-    });
-    expect(await screen.findByText("Example Article")).toBeTruthy();
+    expect(await screen.findByText("This browser page cannot be captured.")).toBeTruthy();
+    expect(screen.getByText(TOOLBAR_RECAPTURE_MESSAGE)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Capture/ })).toBeNull();
   });
 });
 
-describe("Side Panel — Captured", () => {
-  it("shows a generic captured view with stats, action label and Agent tab default", async () => {
-    const user = userEvent.setup();
-    const { deps } = makeDeps({
-      sendResponse: { type: "capture.success", captureId: "c1", result: makeResult() },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
+describe("Side Panel captured result", () => {
+  it("restores a generic result with stats and Agent preview", async () => {
+    const state = capturedState();
+    render(<App deps={makeDeps(state).deps} />);
 
-    expect(screen.getByText("Example Article")).toBeTruthy();
+    expect(await screen.findByText("Example Article")).toBeTruthy();
     expect(screen.getByText("Web Page")).toBeTruthy();
     expect(screen.getByText("Use as context")).toBeTruthy();
     expect(screen.getByText("12,420 chars")).toBeTruthy();
     expect(screen.getByText("3 code blocks")).toBeTruthy();
     expect(screen.getByText("8 links")).toBeTruthy();
-
-    const agentTab = screen.getByRole("tab", { name: "Agent" });
-    expect(agentTab.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText(/Page2Agent Context/, { selector: "pre" })).toBeTruthy();
+    expect(screen.getByText(TOOLBAR_RECAPTURE_MESSAGE)).toBeTruthy();
   });
 
-  it("shows GitHub Issue + Fix this issue for a github result", async () => {
-    const user = userEvent.setup();
-    const { deps } = makeDeps({
-      sendResponse: {
-        type: "capture.success",
-        captureId: "c1",
-        result: makeResult({
-          sourceKind: "github_issue",
-          actionKind: "fix_issue",
-          title: "Fix deletion crash",
-          filename: "acme-page2agent-demo-issue-42.md",
-        }),
-      },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
+  it("shows GitHub Issue + Fix this issue without provider execution UI", async () => {
+    const state = capturedState(makeResult({
+      sourceKind: "github_issue",
+      actionKind: "fix_issue",
+      title: "Fix deletion crash",
+      filename: "acme-page2agent-demo-issue-42.md",
+    }));
+    render(<App deps={makeDeps(state).deps} />);
 
-    expect(screen.getByText("GitHub Issue")).toBeTruthy();
+    expect(await screen.findByText("GitHub Issue")).toBeTruthy();
     expect(screen.getByText("Fix this issue")).toBeTruthy();
     expect(screen.getByText("Fix deletion crash")).toBeTruthy();
     expect(screen.queryByText("Send to Codex")).toBeNull();
   });
 
-  it("switches between Agent and Markdown preview tabs", async () => {
-    const user = userEvent.setup();
-    const { deps } = makeDeps({
-      sendResponse: {
-        type: "capture.success",
-        captureId: "c1",
-        result: makeResult({ markdown: "# Example Article\n\nBody.", agentContext: "agent text" }),
-      },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
-
-    expect(screen.getByText(/agent text/, { selector: "pre" })).toBeTruthy();
-    await user.click(screen.getByRole("tab", { name: "Markdown" }));
-    expect(screen.getByRole("tab", { name: "Markdown" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByText(/Body\./, { selector: "pre" })).toBeTruthy();
-  });
-
-  it("copies the FULL agent context, not the preview", async () => {
+  it("switches previews and copies the full agent context", async () => {
     const user = userEvent.setup();
     const fullContext = "full agent context ".repeat(500);
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
-    const { deps } = makeDeps({
-      sendResponse: { type: "capture.success", captureId: "c1", result: makeResult({ agentContext: fullContext }) },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
+    const state = capturedState(makeResult({ agentContext: fullContext }));
+    render(<App deps={makeDeps(state).deps} />);
 
+    await screen.findByText("Example Article");
+    await user.click(screen.getByRole("tab", { name: "Markdown" }));
+    expect(screen.getByText(/Body\./, { selector: "pre" })).toBeTruthy();
+    await user.click(screen.getByRole("tab", { name: "Agent" }));
     await user.click(screen.getByRole("button", { name: "Copy for Agent" }));
     expect(writeText).toHaveBeenCalledWith(fullContext);
     expect(screen.getByText("Agent context copied.")).toBeTruthy();
   });
 
-  it("keeps the captured result when clipboard fails (action-level error)", async () => {
+  it("keeps the result visible when clipboard fails", async () => {
     const user = userEvent.setup();
     vi.stubGlobal("navigator", {
       clipboard: { writeText: vi.fn().mockRejectedValue(new DOMException("denied")) },
     });
-    const { deps } = makeDeps({
-      sendResponse: { type: "capture.success", captureId: "c1", result: makeResult() },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
+    const state = capturedState();
+    render(<App deps={makeDeps(state).deps} />);
 
+    await screen.findByText("Example Article");
     await user.click(screen.getByRole("button", { name: "Copy for Agent" }));
     expect(screen.getByText("Could not copy to the clipboard. Please try again.")).toBeTruthy();
     expect(screen.getByText("Example Article")).toBeTruthy();
   });
 
-  it("downloads the full markdown with the safe filename", async () => {
+  it("downloads full Markdown and marks truncated previews", async () => {
     const user = userEvent.setup();
     const createObjectURL = vi.fn(() => "blob:page2agent-app");
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
-    const click = vi.fn();
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(click);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(vi.fn());
+    const state = capturedState(makeResult({
+      markdown: "full markdown content",
+      agentContext: "x".repeat(20_001),
+    }));
+    render(<App deps={makeDeps(state).deps} />);
 
-    const { deps } = makeDeps({
-      sendResponse: {
-        type: "capture.success",
-        captureId: "c1",
-        result: makeResult({ markdown: "full markdown content", filename: "example-article.md" }),
-      },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
-
+    expect(await screen.findByText("Preview truncated. Copy and download use the full content.")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Download Markdown" }));
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:page2agent-app");
     expect(screen.getByText("Markdown downloaded.")).toBeTruthy();
   });
-
-  it("shows the explicit truncation marker for over-limit previews", async () => {
-    const user = userEvent.setup();
-    const { deps } = makeDeps({
-      sendResponse: {
-        type: "capture.success",
-        captureId: "c1",
-        result: makeResult({ agentContext: "x".repeat(20_001) }),
-      },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
-
-    expect(
-      screen.getByText("Preview truncated. Copy and download use the full content."),
-    ).toBeTruthy();
-  });
 });
 
-describe("Side Panel — Error", () => {
-  it("shows a friendly error and Capture Again", async () => {
-    const user = userEvent.setup();
-    const { deps } = makeDeps({
-      sendResponse: {
-        type: "capture.failure",
-        captureId: "c1",
-        error: { code: "RESTRICTED_PAGE", message: "This browser page cannot be captured." },
-      },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
-
-    expect(screen.getByText("This browser page cannot be captured.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Capture Again" })).toBeTruthy();
-  });
-});
-
-describe("Side Panel — concurrency", () => {
-  it("serializes intent writes in click order even when writes complete late", async () => {
-    const user = userEvent.setup();
-    const { deps, sentRequests, intentWrites, resolveIntentWrites } = makeDeps({
-      captureIds: ["a", "b"],
-      deferredIntentWrites: true,
-      sendResponse: { type: "capture.success", captureId: "b", result: makeResult({ captureId: "b", title: "Result B" }) },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" })); // A
-    await user.click(screen.getByRole("button", { name: "Capture Again" })); // B
-
-    // The queue starts A's write; B's write must wait.
-    expect(intentWrites.map((intent) => intent.captureId)).toEqual(["a"]);
-    expect(sentRequests).toEqual([]); // requests wait for their own intent write
-
-    resolveIntentWrites.shift()?.(); // A's write completes
-    await vi.waitFor(() => expect(intentWrites.map((intent) => intent.captureId)).toEqual(["a", "b"]));
-    resolveIntentWrites.shift()?.(); // B's write completes
-    await vi.waitFor(() => expect(sentRequests).toEqual(["a", "b"]));
-
-    expect(await screen.findByText("Result B")).toBeTruthy();
-  });
-
-  it("ignores a stale success response after a newer capture", async () => {
-    const user = userEvent.setup();
-    const { deps, sentRequests } = makeDeps({
-      captureIds: ["a", "b"],
-      sendResponse: {
-        type: "capture.success",
-        captureId: "b",
-        result: makeResult({ captureId: "b", title: "Result B" }),
-      },
-    });
-    render(<App deps={deps} />);
-    await user.click(screen.getByRole("button", { name: "Capture Current Page" }));
-    await user.click(screen.getByRole("button", { name: "Capture Again" }));
-
-    expect(sentRequests).toEqual(["a", "b"]);
-    expect(await screen.findByText("Result B")).toBeTruthy();
-  });
-});
-
-describe("Side Panel — session restore", () => {
-  it("restores a captured session from intent + outcome without a capture request", async () => {
-    const intent: LatestCaptureIntent = { schemaVersion: 1, captureId: "old-1", startedAt: "t0" };
-    const { deps, sentRequests } = makeDeps({
-      intent,
-      outcomeFor: () => capturedOutcome(intent, { title: "Restored Title" }),
-    });
-    render(<App deps={deps} />);
-
-    expect(await screen.findByText("Restored Title")).toBeTruthy();
-    expect(await screen.findByText("Use as context")).toBeTruthy();
-    expect(sentRequests).toHaveLength(0);
-  });
-
-  it("restores an error state with Capture Again", async () => {
-    const intent: LatestCaptureIntent = { schemaVersion: 1, captureId: "e1", startedAt: "t0" };
-    const outcome: CaptureOutcome = {
+describe("Side Panel session restore", () => {
+  it("marks a stale intent as interrupted and directs a toolbar retry", async () => {
+    const intent: LatestCaptureIntent = {
       schemaVersion: 1,
-      status: "error",
-      captureId: "e1",
-      error: { code: "NO_CONTENT_FOUND", message: "Unable to find meaningful page content." },
+      captureId: "stale",
+      startedAt: "2026-09-02T00:00:00.000Z",
     };
-    render(<App deps={makeDeps({ intent, outcomeFor: () => outcome }).deps} />);
-    expect(await screen.findByText("Unable to find meaningful page content.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Capture Again" })).toBeTruthy();
-  });
+    render(<App deps={makeDeps({ intent, now: "2026-09-02T00:03:00.001Z" }).deps} />);
 
-  it("shows the interrupted-capture retry message for a stale intent without an outcome", async () => {
-    const staleStartedAt = new Date(Date.now() - 121_000).toISOString();
-    const intent: LatestCaptureIntent = { schemaVersion: 1, captureId: "dead-1", startedAt: staleStartedAt };
-    const { deps } = makeDeps({ intent, outcomeFor: () => null, nowValue: new Date().toISOString() });
-    render(<App deps={deps} />);
     expect(await screen.findByText(INTERRUPTED_CAPTURE_MESSAGE)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Capture Again" })).toBeTruthy();
+    expect(screen.getByText(TOOLBAR_RECAPTURE_MESSAGE)).toBeTruthy();
   });
 
-  it("shows capturing for a fresh intent without an outcome", async () => {
-    const intent: LatestCaptureIntent = { schemaVersion: 1, captureId: "live-1", startedAt: "2026-08-31T00:00:00.000Z" };
-    const { deps } = makeDeps({ intent, outcomeFor: () => null });
-    render(<App deps={deps} />);
-    expect(await screen.findByText("Capturing current page…")).toBeTruthy();
-  });
-
-  it("ignores malformed stored state and shows Idle", async () => {
-    const { deps } = makeDeps();
-    deps.readIntent = async () => ({ garbage: true });
-    render(<App deps={deps} />);
+  it("ignores malformed stored state", async () => {
+    render(<App deps={makeDeps({ intent: { garbage: true } }).deps} />);
     expect(await screen.findByText("No page captured yet.")).toBeTruthy();
   });
 
-  it("subscribes to session changes and unsubscribes on unmount", async () => {
+  it("unsubscribes from session changes on unmount", () => {
     const { deps, unsubscribe } = makeDeps();
     const { unmount } = render(<App deps={deps} />);
     unmount();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("does not let an older asynchronous restore overwrite the latest intent", async () => {
+    const resultA = makeResult({ captureId: "a", title: "Stale A" });
+    const resultB = makeResult({ captureId: "b", title: "Latest B" });
+    let currentIntent: LatestCaptureIntent = {
+      schemaVersion: 1,
+      captureId: "a",
+      startedAt: "2026-09-02T00:00:00.000Z",
+    };
+    let listener: (() => void) | undefined;
+    let readAStarted = false;
+    let resolveA: ((outcome: CaptureOutcome) => void) | undefined;
+    const outcomeA = new Promise<CaptureOutcome>((resolve) => {
+      resolveA = resolve;
+    });
+    const deps: CaptureSessionDeps = {
+      readIntent: async () => currentIntent,
+      readOutcome: async (captureId) => {
+        if (captureId === "a") {
+          readAStarted = true;
+          return outcomeA;
+        }
+        return { schemaVersion: 1, status: "captured", captureId: "b", result: resultB };
+      },
+      subscribeSessionChanges: (nextListener) => {
+        listener = nextListener;
+        return () => undefined;
+      },
+      now: () => "2026-09-02T00:00:30.000Z",
+    };
+    render(<App deps={deps} />);
+    await waitFor(() => expect(readAStarted).toBe(true));
+
+    currentIntent = {
+      schemaVersion: 1,
+      captureId: "b",
+      startedAt: "2026-09-02T00:00:01.000Z",
+    };
+    listener?.();
+    expect(await screen.findByText("Latest B")).toBeTruthy();
+
+    resolveA?.({ schemaVersion: 1, status: "captured", captureId: "a", result: resultA });
+    await Promise.resolve();
+    expect(screen.queryByText("Stale A")).toBeNull();
+    expect(screen.getByText("Latest B")).toBeTruthy();
   });
 });

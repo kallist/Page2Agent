@@ -3,9 +3,9 @@
  *
  * Ownership model (TASK 08 hardening):
  * - `LatestCaptureIntent` lives under one key per browser window and is
- *   written ONLY by that window's Side Panel (the user click order is the
- *   source of truth). Workers never write it, so a stale worker can never
- *   revert the latest user intent or cross a window boundary.
+ *   written by the Service Worker's toolbar-action controller (the action
+ *   click order is the source of truth). Capture workers write only outcomes,
+ *   so a stale capture can never revert the latest intent or cross a window.
  * - `CaptureOutcome` lives under a per-capture key and is written ONLY by the
  *   Service Worker handling that capture. Per-capture keys never collide, so
  *   no compare-and-swap is needed and no TOCTOU window exists.

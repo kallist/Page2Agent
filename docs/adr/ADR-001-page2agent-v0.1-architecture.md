@@ -375,11 +375,11 @@ background page surveillance.
 Without `<all_urls>` persistent content scripts, prefer:
 
 ```text
-User-triggered Capture
+User clicks Page2Agent toolbar action
 ↓
 activeTab
 ↓
-programmatic injection
+capture the exact action tab + programmatic injection
 ↓
 capture
 ```
@@ -410,17 +410,16 @@ decision.
 
 TASK 07 activated the `storage` permission for `chrome.storage.session` (the
 ADR-planned session-scoped state). TASK 08 separated latest user intent from
-per-capture outcomes. TASK 09 additionally scopes the latest-intent key by
-browser window and carries that window ID in `capture.request`, so concurrent
-global Side Panels cannot overwrite each other's intent or capture the active
-tab from the wrong window. The Side Panel writes its window's capturing intent
-before sending the request; the Service Worker writes only the request's
-per-capture outcome key. A new intent removes only the prior outcome belonging
-to that same window. Captured content never enters `chrome.storage.local`/sync
-and no capture history is stored. A worker that finishes after its window has
-advanced to a newer intent removes only its own now-orphaned outcome. Markdown
-downloads use Blob + object URL + anchor, so no `downloads` permission is
-needed.
+per-capture outcomes. TASK 09 scoped the latest-intent key by browser window.
+The production activeTab hotfix makes the toolbar action controller write that
+window's intent and capture the exact `chrome.action.onClicked(tab)` target;
+the persistent Side Panel is read-only session UI and never re-queries or
+authorizes a newly active tab. The capture worker writes only its per-capture
+outcome key. A new intent removes only the prior outcome belonging to that same
+window. Captured content never enters `chrome.storage.local`/sync and no
+capture history is stored. A stale capture removes only its own orphaned
+outcome. Markdown downloads use Blob + object URL + anchor, so no `downloads`
+permission is needed.
 
 ### Concurrency Model
 

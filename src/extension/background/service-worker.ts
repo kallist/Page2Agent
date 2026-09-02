@@ -1,43 +1,64 @@
 /**
- * MV3 Service Worker — production capture orchestration (TASK 07).
+ * MV3 Service Worker — production action → exact-tab capture orchestration.
  *
- * Responsibilities:
- *  1. Configure Side Panel action behavior.
- *  2. Receive validated capture.request messages from the Side Panel.
- *  3. Delegate to the capture orchestrator (active tab → injection → content
- *     round-trip → packaging → session commit).
- *
- * No durable in-memory capture state: the worker may suspend/restart at any
- * time; the latest-capture source of truth is chrome.storage.session.
+ * The toolbar action is both the product trigger and the activeTab grant. The
+ * tab supplied by chrome.action.onClicked is captured directly; the Side Panel
+ * only restores session state and never guesses or requests another tab.
  */
-import { handleCaptureRequest, chromeCaptureRuntimeDeps } from "./capture";
-import { isCaptureRequest } from "../messaging/runtime-messages";
+import { createActionClickHandler } from "./action-capture";
+import { captureExactTab, chromeCaptureRuntimeDeps } from "./capture";
+import { isHarnessCaptureRequest } from "../messaging/runtime-messages";
+import { chromeSessionStorage } from "../session/session-storage";
 
-function configureSidePanel(): void {
+const handleActionClick = createActionClickHandler({
+  storage: chromeSessionStorage,
+  openSidePanel: (windowId) => chrome.sidePanel.open({ windowId }),
+  capture: (captureId, target) =>
+    captureExactTab(captureId, target, chromeCaptureRuntimeDeps),
+  createCaptureId: () => crypto.randomUUID(),
+  now: () => new Date().toISOString(),
+});
+
+function disableAutomaticPanelAction(): void {
   chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
-    .catch((error: unknown) => {
-      // Keep the worker alive; never surface raw errors to the UI.
-      console.warn("Page2Agent: side panel action behavior could not be configured.", error);
-    });
+    .setPanelBehavior({ openPanelOnActionClick: false })
+    .catch(() => undefined);
 }
 
+chrome.action.onClicked.addListener((tab) => {
+  // Do not await before createActionClickHandler invokes sidePanel.open(): the
+  // call must remain directly inside Chrome's action user-gesture event path.
+  void handleActionClick(tab);
+});
+
+/**
+ * Playwright cannot reliably click Chrome toolbar UI to create an activeTab
+ * grant. The E2E-only dist adds one localhost host permission and may emulate
+ * the action tab through this gated message. Production dist has no host
+ * permissions, so this test seam is fail-closed and unreachable there.
+ */
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isCaptureRequest(message)) {
-    // Unknown or malformed message: ignore, never respond as something else.
+  if (!isE2eHarnessBuild() || !isHarnessCaptureRequest(message)) {
     return false;
   }
-  // Sender trust: only extension-owned contexts may trigger a capture action.
-  // (Content-script senders report a web-page sender URL; extension pages
-  // report a chrome-extension:// URL even when hosted in a browser tab.)
   const fromExtensionPage = sender.url?.startsWith("chrome-extension://") === true;
-  if (sender.tab !== undefined && !fromExtensionPage) {
+  if (!fromExtensionPage) {
     return false;
   }
-  // Explicit async response pattern: keep the channel open with `return true`
-  // and respond later. Compatible with MV3 on Chrome and Edge.
-  void handleCaptureRequest(message, chromeCaptureRuntimeDeps).then(sendResponse);
+  void handleActionClick(message.tab).then(sendResponse);
   return true;
 });
 
-configureSidePanel();
+function isE2eHarnessBuild(): boolean {
+  const hostPermissions = chrome.runtime.getManifest().host_permissions;
+  return (
+    Array.isArray(hostPermissions) &&
+    hostPermissions.length === 1 &&
+    hostPermissions[0] === "http://127.0.0.1/*"
+  );
+}
+
+// setPanelBehavior is persisted by Chrome. Explicitly turn off the previous
+// open-on-action behavior so existing unpacked installs dispatch onClicked.
+disableAutomaticPanelAction();
+chrome.runtime.onInstalled.addListener(disableAutomaticPanelAction);

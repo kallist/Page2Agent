@@ -13,18 +13,26 @@ import type { NormalizedDocument, PageContext } from "../../core";
 import { isCaptureErrorView, isCaptureResult } from "../capture/capture-result";
 import type { CaptureErrorView, CaptureResult } from "../capture/capture-result";
 
-export const CAPTURE_REQUEST = "capture.request" as const;
+export const HARNESS_CAPTURE_REQUEST = "harness.capture.request" as const;
 export const CAPTURE_SUCCESS = "capture.success" as const;
 export const CAPTURE_FAILURE = "capture.failure" as const;
 export const CONTENT_CAPTURE_REQUEST = "content.capture.request" as const;
 export const CONTENT_CAPTURE_SUCCESS = "content.capture.success" as const;
 export const CONTENT_CAPTURE_FAILURE = "content.capture.failure" as const;
 
-/** Side Panel → Service Worker: capture the current active tab. */
-export interface CaptureRequest {
-  type: typeof CAPTURE_REQUEST;
-  captureId: string;
-  windowId: number;
+/**
+ * E2E harness → Service Worker: emulate the action event with an exact tab.
+ * Production UI never emits this message; the worker accepts it only from the
+ * localhost-host-permission test build.
+ */
+export interface HarnessCaptureRequest {
+  type: typeof HARNESS_CAPTURE_REQUEST;
+  tab: {
+    id: number;
+    windowId: number;
+    url: string;
+    title?: string;
+  };
 }
 
 /** Service Worker → Side Panel: capture completed with the final result. */
@@ -61,7 +69,7 @@ export interface ContentCaptureFailure {
   error: CaptureErrorView;
 }
 
-export type CaptureMessage = CaptureRequest | CaptureSuccess | CaptureFailure;
+export type CaptureMessage = HarnessCaptureRequest | CaptureSuccess | CaptureFailure;
 export type ContentCaptureMessage =
   | ContentCaptureRequest
   | ContentCaptureSuccess
@@ -80,15 +88,28 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-export function isCaptureRequest(value: unknown): value is CaptureRequest {
+export function isHarnessCaptureRequest(value: unknown): value is HarnessCaptureRequest {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["type", "captureId", "windowId"]) &&
-    value.type === CAPTURE_REQUEST &&
-    isNonEmptyString(value.captureId) &&
+    hasOnlyKeys(value, ["type", "tab"]) &&
+    value.type === HARNESS_CAPTURE_REQUEST &&
+    isActionTab(value.tab)
+  );
+}
+
+function isActionTab(value: unknown): boolean {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "windowId", "url", "title"])) {
+    return false;
+  }
+  return (
+    typeof value.id === "number" &&
+    Number.isSafeInteger(value.id) &&
+    value.id >= 0 &&
     typeof value.windowId === "number" &&
     Number.isSafeInteger(value.windowId) &&
-    value.windowId >= 0
+    value.windowId >= 0 &&
+    isNonEmptyString(value.url) &&
+    (value.title === undefined || typeof value.title === "string")
   );
 }
 

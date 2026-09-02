@@ -97,4 +97,21 @@ describe("manifest.json", () => {
     expect(csp).not.toContain("unsafe-eval");
     expect(csp).not.toContain("unsafe-inline");
   });
+
+  it("routes the production toolbar action through an explicit click handler", () => {
+    const serviceWorker = readFileSync(
+      resolve(rootDir, "src", "extension", "background", "service-worker.ts"),
+      "utf8",
+    );
+
+    expect(serviceWorker).toContain("chrome.action.onClicked.addListener");
+    expect(serviceWorker).not.toContain("openPanelOnActionClick: true");
+  });
+
+  it("keeps localhost host access confined to the E2E build script", () => {
+    const e2eBuild = readFileSync(resolve(rootDir, "scripts", "build-e2e.mjs"), "utf8");
+    expect(manifest.host_permissions).toBeUndefined();
+    expect(e2eBuild).toContain('manifest.host_permissions = ["http://127.0.0.1/*"]');
+    expect(e2eBuild).toContain("production manifest unexpectedly already has host_permissions");
+  });
 });
