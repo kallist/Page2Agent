@@ -183,6 +183,23 @@ describe("GitHubIssueExtractor issue facts", () => {
       text: "related issue",
     });
   });
+
+  it("extracts the current data-testid GitHub issue DOM without including comments", async () => {
+    const document = await extractFixture("issue-modern.html");
+    expect(document.metadata.title).toBe("Modern issue title");
+    expect(document.metadata.author).toBe("Ada (ada)");
+    expect(document.metadata.publishedAt).toBe("2026-08-15T09:00:00.000Z");
+    expect(JSON.stringify(document.blocks)).toContain("Modern source body.");
+    expect(JSON.stringify(document.blocks)).not.toContain("This comment must stay excluded");
+    expect(extractSourceAcceptanceCriteria(document.blocks)).toEqual([
+      "Use stable semantic selectors",
+    ]);
+    if (document.source.kind === "github_issue") {
+      expect(document.source.labels).toEqual(["bug", "regression"]);
+    } else {
+      expect.unreachable("expected github_issue source");
+    }
+  });
 });
 
 describe("GitHubIssueExtractor comments and timeline exclusion", () => {

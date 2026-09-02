@@ -35,7 +35,7 @@ import {
   ISSUE_AUTHOR_SELECTORS,
   ISSUE_BODY_SELECTORS,
   ISSUE_CREATED_TIME_SELECTORS,
-  ISSUE_LABELS_CONTAINER_SELECTOR,
+  ISSUE_LABELS_CONTAINER_SELECTORS,
   ISSUE_TITLE_SELECTORS,
 } from "./github-issue-selectors";
 import { parseGitHubIssueUrl } from "./github-issue-url";
@@ -133,17 +133,18 @@ export class GitHubIssueExtractor implements PageExtractor {
 }
 
 function extractLabels(sourceDocument: Document): string[] {
-  const container = sourceDocument.querySelector(ISSUE_LABELS_CONTAINER_SELECTOR);
+  const container = firstMatch(sourceDocument, ISSUE_LABELS_CONTAINER_SELECTORS);
   if (container === null) {
     return [];
   }
   const labels: string[] = [];
   const seen = new Set<string>();
-  for (const element of container.querySelectorAll("a, span")) {
+  for (const element of container.querySelectorAll("a")) {
     if (element.getAttribute("aria-hidden") === "true") {
       continue;
     }
-    const text = normalizeInlineText(element.textContent ?? "");
+    const visibleText = element.querySelector('[data-component="Text"]')?.textContent;
+    const text = normalizeInlineText(visibleText ?? element.textContent ?? "");
     if (text && !seen.has(text)) {
       seen.add(text);
       labels.push(text);
