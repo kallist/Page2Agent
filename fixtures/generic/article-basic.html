@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Capturing Web Contexts for Coding Agents</title>
+  <link rel="canonical" href="https://blog.example.com/capturing-web-contexts">
+</head>
+<body>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/about">About</a>
+  </nav>
+  <header>
+    <h1>Page2Agent Blog</h1>
+  </header>
+  <aside class="ad">
+    <p>Sponsored: Try SuperWidget today!</p>
+  </aside>
+  <article>
+    <h1>Capturing Web Contexts for Coding Agents</h1>
+    <p>When an agent works on an issue, it needs the page's <em>semantic context</em>, not a screenshot.</p>
+    <h2>Why structure matters</h2>
+    <p>Read the <a href="/docs/architecture">architecture docs</a> for details.</p>
+    <blockquote>
+      <p>Context is what turns a web page into agent-ready input.</p>
+    </blockquote>
+    <h2>An example pipeline</h2>
+    <p>Capture, extract, normalize, package, deliver.</p>
+    <ul>
+      <li>Capture the page</li>
+      <li>Extract the article</li>
+      <li>Normalize into blocks</li>
+    </ul>
+    <ol>
+      <li>Open the extension</li>
+      <li>Click capture</li>
+      <li>Copy the context</li>
+    </ol>
+    <pre><code class="language-js">function capture(page) {
+  return normalize(page.blocks);
+}</code></pre>
+    <p>See the <a href="/images/diagram.png">diagram</a> below.</p>
+    <figure>
+      <img src="/images/diagram.png" alt="Capture pipeline diagram" title="Pipeline">
+      <figcaption>Figure 1: The canonical pipeline.</figcaption>
+    </figure>
+    <table>
+      <thead>
+        <tr><th>Stage</th><th>Output</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Capture</td><td>PageContext</td></tr>
+        <tr><td>Extract</td><td>NormalizedDocument</td></tr>
+      </tbody>
+    </table>
+  </article>
+  <footer>
+    <p>© 2026 Page2Agent Blog</p>
+  </footer>
+</body>
+</html>

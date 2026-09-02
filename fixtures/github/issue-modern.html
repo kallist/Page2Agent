@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Modern GitHub issue</title>
+    <link rel="canonical" href="https://github.com/acme/page2agent-demo/issues/42">
+  </head>
+  <body>
+    <header data-testid="issue-header">
+      <h1><bdi data-testid="issue-title">Modern issue title</bdi><span>#42</span></h1>
+    </header>
+    <main data-testid="issue-viewer-issue-container">
+      <article data-testid="issue-body" class="react-issue-body">
+        <a data-testid="issue-body-header-author" href="https://github.com/ada">Ada (ada)</a>
+        <a data-testid="issue-body-header-link" href="#issue-1">
+          <relative-time datetime="2026-08-15T09:00:00.000Z">on Aug 15, 2026</relative-time>
+        </a>
+        <div data-testid="issue-body-viewer">
+          <div data-testid="markdown-body" class="markdown-body">
+            <p>Modern source body.</p>
+            <h2>Acceptance Criteria</h2>
+            <ul><li>Use stable semantic selectors</li></ul>
+          </div>
+        </div>
+      </article>
+      <article data-testid="comment-1">
+        <div data-testid="markdown-body" class="markdown-body">
+          <h2>Acceptance Criteria</h2>
+          <ul><li>This comment must stay excluded</li></ul>
+        </div>
+      </article>
+    </main>
+    <aside data-testid="sidebar-labels-section">
+      <div data-testid="issue-labels">
+        <a href="/acme/page2agent-demo/issues?q=label%3Abug">
+          <span data-component="Text">bug</span><span class="sr-only">Something is broken</span>
+        </a>
+        <a href="/acme/page2agent-demo/issues?q=label%3Aregression">
+          <span data-component="Text">regression</span><span class="sr-only">Unexpected behavior</span>
+        </a>
+      </div>
+    </aside>
+  </body>
+</html>

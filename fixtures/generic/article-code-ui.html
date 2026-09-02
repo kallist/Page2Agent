@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Code UI Fixture</title>
+</head>
+<body>
+  <article>
+    <h1>Code UI Fixture</h1>
+    <p>Code samples below.</p>
+
+    <h2>Python with copy UI and line numbers</h2>
+    <pre class="line-numbers"><button aria-label="Copy code" class="copy-button">Copy</button>
+<span class="line-numbers-rows" aria-hidden="true">1
+2
+3</span>
+<code class="language-python">def greet(name):
+    message = f"hello, {name}"
+    return message</code></pre>
+
+    <h2>Plain pre without nested code</h2>
+    <pre>if (a &lt; b &amp;&amp; b &gt; 0) {
+  console.log(`tick ${a} — backtick: \`x\``);
+}</pre>
+
+    <h2>JavaScript with alternate class</h2>
+    <pre><code class="lang-js">const value = 1 &lt; 2 ? "yes" : "no";</code></pre>
+
+    <h2>Plain pre with copy button and line-number gutter</h2>
+    <pre><button class="copy-button">Copy</button>
+<span class="line-numbers">1
+2</span>actual code line one
+actual code line two</pre>
+
+    <h2>No language hint</h2>
+    <pre><code>plain text code here</code></pre>
+
+    <h2>Formatting newlines</h2>
+    <pre><code>
+def indented():
+    pass
+</code></pre>
+  </article>
+</body>
+</html>
