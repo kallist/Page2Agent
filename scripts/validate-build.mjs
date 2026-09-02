@@ -84,6 +84,10 @@ if (existsSync(manifestPath)) {
   // 7. No <all_urls> host permission.
   const hostPermissions = manifest.host_permissions ?? [];
   check(
+    manifest.host_permissions === undefined,
+    `production manifest must not declare host_permissions: ${hostPermissions.join(", ")}`,
+  );
+  check(
     !hostPermissions.includes("<all_urls>"),
     "manifest grants <all_urls> host permission",
   );
