@@ -11,6 +11,25 @@ import { domToBlocks } from "../../shared/dom/blocks";
 
 const TASK_LIST_MARKER_ATTRIBUTE = "data-page2agent-tasklist";
 
+/**
+ * GitHub progressively enhances task-list items with non-source UI. These
+ * descendants can include a visual checkbox marker and screen-reader drag
+ * instructions. They are absent from the issue bodyHTML source and must not
+ * become ListBlock text.
+ *
+ * Keep this policy inside the GitHub adapter: the shared DOM walker also
+ * serves generic pages, where site-specific cleanup would be incorrect.
+ */
+const NON_SOURCE_TASK_UI_SELECTOR = [
+  "[hidden]",
+  '[aria-hidden="true"]',
+  "[aria-live]",
+  '[role="status"]',
+  ".sr-only",
+  ".sr-only-focusable",
+  '[data-component="VisuallyHidden"]',
+].join(",");
+
 /** Clone the body root so all cleanup/transformation happens off the live DOM. */
 export function cloneBodyRoot(bodyRoot: Element): Element {
   return bodyRoot.cloneNode(true) as Element;
@@ -30,6 +49,9 @@ export function applyTaskListMarkers(root: Element): void {
     const li = input.closest("li");
     if (li === null) {
       continue;
+    }
+    for (const nonSourceUi of li.querySelectorAll(NON_SOURCE_TASK_UI_SELECTOR)) {
+      nonSourceUi.remove();
     }
     input.setAttribute(TASK_LIST_MARKER_ATTRIBUTE, "1");
     const marker = (input as HTMLInputElement).checked ? "[x] " : "[ ] ";

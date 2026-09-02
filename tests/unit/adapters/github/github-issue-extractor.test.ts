@@ -277,6 +277,45 @@ describe("GitHubIssueExtractor task lists and code", () => {
     });
   });
 
+  it("preserves modern GitHub task-list fidelity without accessibility UI", async () => {
+    const sourceDocument = loadGitHubFixture("issue-modern-task-list.html");
+    const before = sourceDocument.documentElement.outerHTML;
+    const document = await extractor.extract({
+      context: makePageContext({ url: GITHUB_FIXTURE_BASE_URL }),
+      document: sourceDocument,
+    });
+    const lists = document.blocks.filter((block) => block.type === "list");
+
+    expect(lists[0]).toEqual({
+      type: "list",
+      ordered: false,
+      items: [
+        "[x] I have searched the existing issues and this bug is not already filed.",
+        "[x] I believe this is a legitimate bug, not just a question or feature request.",
+        "[ ] Keep this normal task text unchanged.",
+        "Ordinary list item remains ordinary.",
+      ],
+    });
+    expect(lists[0]?.items).toHaveLength(4);
+    expect(lists[1]).toEqual({
+      type: "list",
+      ordered: false,
+      items: ["Plain unordered list text."],
+    });
+    expect(JSON.stringify(document.blocks)).not.toContain("To pick up a draggable item");
+    expect(JSON.stringify(document.blocks)).not.toContain("While dragging");
+    expect(JSON.stringify(document.blocks)).not.toContain("Press space again to drop");
+    expect(JSON.stringify(document.blocks)).not.toContain("press escape to cancel");
+    expect(extractSourceAcceptanceCriteria(document.blocks)).toEqual([
+      "[ ] first",
+      "[x] second",
+    ]);
+    expect(JSON.stringify(document.blocks)).not.toContain(
+      "This comment must stay excluded from the issue body.",
+    );
+    expect(sourceDocument.documentElement.outerHTML).toBe(before);
+  });
+
   it("preserves code with language hints and without copy UI", async () => {
     const document = await extractFixture("issue-code.html");
     const codeBlocks = document.blocks.filter((block) => block.type === "code");

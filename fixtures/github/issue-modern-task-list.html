@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Modern task list issue</title>
+  <link rel="canonical" href="https://github.com/acme/page2agent-demo/issues/42">
+</head>
+<body>
+  <header data-testid="issue-header">
+    <h1><bdi data-testid="issue-title">Preserve modern task lists</bdi><span>#42</span></h1>
+  </header>
+  <main data-testid="issue-viewer-issue-container">
+    <article data-testid="issue-body" class="react-issue-body">
+      <a data-testid="issue-body-header-author" href="https://github.com/ada">ada</a>
+      <a data-testid="issue-body-header-link" href="#issue-42">
+        <relative-time datetime="2026-09-02T08:00:00.000Z">on Sep 2, 2026</relative-time>
+      </a>
+      <div data-testid="issue-body-viewer">
+        <div data-testid="markdown-body" class="markdown-body">
+          <h3>Do you need to file an issue?</h3>
+          <ul class="contains-task-list">
+            <li class="task-list-item">
+              <span aria-hidden="true">[x]</span>
+              <input type="checkbox" class="task-list-item-checkbox" aria-label="Completed task" checked="" disabled="">
+              <span>I have searched the existing issues and this bug is not already filed.</span>
+              <span class="sr-only" data-testid="task-list-drag-instructions">To pick up a draggable item, press the space bar. While dragging, use the arrow keys to move the item. Press space again to drop the item in its new position, or press escape to cancel.</span>
+            </li>
+            <li class="task-list-item">
+              <span aria-hidden="true">[x]</span>
+              <input type="checkbox" class="task-list-item-checkbox" aria-label="Completed task" checked="" disabled="">
+              <span>I believe this is a legitimate bug, not just a question or feature request.</span>
+            </li>
+            <li class="task-list-item">
+              <span aria-hidden="true">[ ]</span>
+              <input type="checkbox" class="task-list-item-checkbox" aria-label="Incomplete task" disabled="">
+              <span>Keep this normal task text unchanged.</span>
+            </li>
+            <li>Ordinary list item remains ordinary.</li>
+          </ul>
+          <ul>
+            <li>Plain unordered list text.</li>
+          </ul>
+          <h3>Acceptance Criteria</h3>
+          <ul class="contains-task-list">
+            <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled=""> first</li>
+            <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" checked="" disabled=""> second</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+    <article data-testid="comment-1">
+      <div data-testid="markdown-body" class="markdown-body">
+        <p>This comment must stay excluded from the issue body.</p>
+      </div>
+    </article>
+  </main>
+</body>
+</html>
