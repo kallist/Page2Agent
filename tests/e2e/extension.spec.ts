@@ -200,4 +200,3 @@ test("a freshly opened panel page restores the latest captured session", async (
   await fixture.close();
   await restored.close();
 });
-
