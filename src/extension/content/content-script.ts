@@ -1,6 +1,7 @@
 /**
- * Programmatically injected Content Script — production capture runtime
- * (TASK 07). Runs in the page's isolated world; never in the MAIN world.
+ * Programmatically injected Content Script — production capture + Context
+ * Lens runtime (TASK 07 / V1.1). Runs in the page's isolated world; never in
+ * the MAIN world.
  *
  * Repeated injection safety: the initializer registers the message listener
  * at most once per isolated world using a globalThis flag. The flag lives in
@@ -10,6 +11,9 @@
  * repeated injection never depends on shared chunks.
  */
 import { handleContentCaptureRequest, createProductionRegistry } from "./content-capture";
+import { createLensController } from "./lens/lens-controller";
+import { isContentCaptureRequest } from "../messaging/runtime-messages";
+import { isLensRoutedRequest } from "../messaging/lens-messages";
 import type { MessageListener } from "./listener";
 
 export const CONTENT_SCRIPT_READY_FLAG = "__PAGE2AGENT_CONTENT_SCRIPT_READY__";
@@ -52,19 +56,35 @@ export function createGlobalInitializationState(): InitializationState {
 }
 
 /**
- * Production content listener: any content.capture.request is handled through
- * the testable handler; unknown messages are ignored (never respond as
- * something else). `return true` keeps the channel open for the async reply.
+ * Production content listener: capture requests and lens requests are
+ * handled through testable handlers; unknown messages are ignored (never
+ * respond as something else). `return true` keeps the channel open for the
+ * async reply.
  */
 export function createContentMessageListener(): MessageListener {
   const registry = createProductionRegistry();
+  const lensController = createLensController({
+    locationHref: () => location.href,
+    document,
+    window,
+    broadcast: (message) => {
+      chrome.runtime.sendMessage(message).catch(() => undefined);
+    },
+  });
   return (message, _sender, sendResponse) => {
-    void handleContentCaptureRequest(message, {
-      locationHref: () => location.href,
-      document,
-      registry,
-    }).then(sendResponse);
-    return true;
+    if (isLensRoutedRequest(message)) {
+      void lensController.handle(message).then(sendResponse);
+      return true;
+    }
+    if (isContentCaptureRequest(message)) {
+      void handleContentCaptureRequest(message, {
+        locationHref: () => location.href,
+        document,
+        registry,
+      }).then(sendResponse);
+      return true;
+    }
+    return false;
   };
 }
 
