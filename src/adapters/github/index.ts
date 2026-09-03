@@ -1,5 +1,10 @@
 export { GitHubIssueExtractor } from "./github-issue-extractor";
 export { parseGitHubIssueUrl } from "./github-issue-url";
 export type { GitHubIssueIdentity } from "./github-issue-url";
+export { GitHubPullRequestExtractor } from "./github-pr-extractor";
+export { parseGitHubPullRequestUrl } from "./github-pr-url";
+export type { GitHubPullRequestIdentity } from "./github-pr-url";
 export { extractSourceAcceptanceCriteria, isAcceptanceCriteriaHeading } from "./acceptance-criteria";
 export { extractIssueBodyBlocks, applyTaskListMarkers, cloneBodyRoot, isBodyTextEmpty } from "./github-issue-body";
+export { extractLabelsFromContainer } from "./github-labels";
+export { githubRegionElementsToBlocks, isInsideGitHubBodyRegion } from "./github-region-blocks";
