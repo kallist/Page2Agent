@@ -10,3 +10,4 @@ export * from "./url";
 export * from "./extract";
 export * from "./size-policy";
 export * from "./serialize";
+export * from "./workbench";

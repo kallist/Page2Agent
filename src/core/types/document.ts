@@ -20,6 +20,7 @@ import { isSafeAbsoluteUrl, isSafeLinkUrl } from "../url/normalize-url";
 
 export const WEB_SOURCE_KIND = "web" as const;
 export const GITHUB_ISSUE_SOURCE_KIND = "github_issue" as const;
+export const GITHUB_PULL_REQUEST_SOURCE_KIND = "github_pull_request" as const;
 
 export interface WebSourceDescriptor {
   kind: typeof WEB_SOURCE_KIND;
@@ -38,7 +39,32 @@ export interface GitHubIssueSourceDescriptor {
   labels?: string[];
 }
 
-export type SourceDescriptor = WebSourceDescriptor | GitHubIssueSourceDescriptor;
+/**
+ * GitHub Pull Request identity (V1.1). Identity (owner/repo/prNumber) is a
+ * source fact derived from the URL. State and branch display names are
+ * optional rendered-DOM facts; they are never invented when the DOM does not
+ * expose them. The optional strings are display values only, never URLs.
+ */
+export const GITHUB_PULL_REQUEST_STATES = ["open", "closed", "merged"] as const;
+export type GitHubPullRequestState = (typeof GITHUB_PULL_REQUEST_STATES)[number];
+
+export interface GitHubPullRequestSourceDescriptor {
+  kind: typeof GITHUB_PULL_REQUEST_SOURCE_KIND;
+  url: string;
+  canonicalUrl?: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  labels?: string[];
+  state?: GitHubPullRequestState;
+  baseBranch?: string;
+  headBranch?: string;
+}
+
+export type SourceDescriptor =
+  | WebSourceDescriptor
+  | GitHubIssueSourceDescriptor
+  | GitHubPullRequestSourceDescriptor;
 
 const WEB_SOURCE_KEYS = ["kind", "url", "canonicalUrl", "site"];
 const GITHUB_ISSUE_SOURCE_KEYS = [
@@ -49,6 +75,18 @@ const GITHUB_ISSUE_SOURCE_KEYS = [
   "repo",
   "issueNumber",
   "labels",
+];
+const GITHUB_PULL_REQUEST_SOURCE_KEYS = [
+  "kind",
+  "url",
+  "canonicalUrl",
+  "owner",
+  "repo",
+  "prNumber",
+  "labels",
+  "state",
+  "baseBranch",
+  "headBranch",
 ];
 
 function isOptionalSafeAbsoluteUrl(value: unknown): value is string | undefined {
@@ -82,8 +120,107 @@ export function isGitHubIssueSourceDescriptor(
   );
 }
 
+export function isGitHubPullRequestState(value: unknown): value is GitHubPullRequestState {
+  return (
+    typeof value === "string" &&
+    (GITHUB_PULL_REQUEST_STATES as readonly string[]).includes(value)
+  );
+}
+export function isGitHubPullRequestSourceDescriptor(
+  value: unknown,
+): value is GitHubPullRequestSourceDescriptor {
+  if (
+    !isRecord(value) ||
+    !hasOnlyAllowedKeys(value, GITHUB_PULL_REQUEST_SOURCE_KEYS) ||
+    value.kind !== GITHUB_PULL_REQUEST_SOURCE_KIND ||
+    !isSafeAbsoluteUrl(value.url) ||
+    !isOptionalSafeAbsoluteUrl(value.canonicalUrl) ||
+    !isMeaningfulText(value.owner) ||
+    !isMeaningfulText(value.repo) ||
+    !isPositiveSafeInteger(value.prNumber) ||
+    !isOptionalNonEmptyStringArray(value.labels) ||
+    (value.state !== undefined && !isGitHubPullRequestState(value.state))
+  ) {
+    return false;
+  }
+  return (
+    isOptionalMeaningfulString(value.baseBranch) &&
+    isOptionalMeaningfulString(value.headBranch)
+  );
+}
+
 export function isSourceDescriptor(value: unknown): value is SourceDescriptor {
-  return isWebSourceDescriptor(value) || isGitHubIssueSourceDescriptor(value);
+  return (
+    isWebSourceDescriptor(value) ||
+    isGitHubIssueSourceDescriptor(value) ||
+    isGitHubPullRequestSourceDescriptor(value)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DocumentCaptureInfo — how this document was produced (V1.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Semantic adapter identities. A document records WHICH adapter produced its
+ * blocks so receipts, nutrition labels and recipe suggestions can reason
+ * about extraction provenance without re-running detection.
+ */
+export const DOCUMENT_ADAPTER_IDS = [
+  "generic-article",
+  "github-issue",
+  "github-pull-request",
+  "technical-docs",
+  "context-lens",
+] as const;
+export type DocumentAdapterId = (typeof DOCUMENT_ADAPTER_IDS)[number];
+
+export const DOCUMENT_ADAPTER_NAMES: Record<DocumentAdapterId, string> = {
+  "generic-article": "Generic Article",
+  "github-issue": "GitHub Issue",
+  "github-pull-request": "GitHub Pull Request",
+  "technical-docs": "Technical Documentation",
+  "context-lens": "Context Lens",
+};
+
+export interface DocumentAdapterInfo {
+  id: DocumentAdapterId;
+  /** Human label derived from the id, kept as data for serialization. */
+  name: string;
+}
+
+/** Capture scope distinguishes full-page captures from picked regions. */
+export const DOCUMENT_CAPTURE_SCOPES = [
+  "full-page",
+  "selection",
+  "text-selection",
+] as const;
+export type DocumentCaptureScope = (typeof DOCUMENT_CAPTURE_SCOPES)[number];
+
+export interface DocumentCaptureInfo {
+  adapter: DocumentAdapterInfo;
+  scope: DocumentCaptureScope;
+}
+
+const ADAPTER_INFO_KEYS = ["id", "name"];
+const CAPTURE_INFO_KEYS = ["adapter", "scope"];
+
+function isDocumentAdapterInfo(value: unknown): value is DocumentAdapterInfo {
+  return (
+    isRecord(value) &&
+    hasOnlyAllowedKeys(value, ADAPTER_INFO_KEYS) &&
+    (DOCUMENT_ADAPTER_IDS as readonly string[]).includes(value.id as string) &&
+    value.name === DOCUMENT_ADAPTER_NAMES[value.id as DocumentAdapterId]
+  );
+}
+
+function isDocumentCaptureInfo(value: unknown): value is DocumentCaptureInfo {
+  return (
+    isRecord(value) &&
+    hasOnlyAllowedKeys(value, CAPTURE_INFO_KEYS) &&
+    isDocumentAdapterInfo(value.adapter) &&
+    (DOCUMENT_CAPTURE_SCOPES as readonly string[]).includes(value.scope as string)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -384,9 +521,14 @@ export interface NormalizedDocument {
   metadata: DocumentMetadata;
   blocks: ContentBlock[];
   assets: Asset[];
+  /**
+   * V1.1: optional production provenance. Absent on legacy documents; every
+   * current adapter writes it. Optionality keeps V1.0 session data readable.
+   */
+  capture?: DocumentCaptureInfo;
 }
 
-const DOCUMENT_KEYS = ["schemaVersion", "source", "metadata", "blocks", "assets"];
+const DOCUMENT_KEYS = ["schemaVersion", "source", "metadata", "blocks", "assets", "capture"];
 
 export function isNormalizedDocument(value: unknown): value is NormalizedDocument {
   if (!isRecord(value) || !hasOnlyAllowedKeys(value, DOCUMENT_KEYS)) {
@@ -400,6 +542,7 @@ export function isNormalizedDocument(value: unknown): value is NormalizedDocumen
     value.blocks.length >= 1 && // no-content documents must fail, not be guessed at
     value.blocks.every(isContentBlock) &&
     Array.isArray(value.assets) &&
-    value.assets.every(isAsset)
+    value.assets.every(isAsset) &&
+    (value.capture === undefined || isDocumentCaptureInfo(value.capture))
   );
 }

@@ -69,6 +69,24 @@ function serializeSourceSection(agentPackage: AgentPackage): string {
         lines.push(`Labels: ${document.source.labels.join(", ")}`);
       }
       break;
+    case "github_pull_request":
+      lines.push("Type: GitHub Pull Request");
+      lines.push(`Repository: ${document.source.owner}/${document.source.repo}`);
+      lines.push(`Pull Request: #${document.source.prNumber}`);
+      lines.push(`URL: ${document.source.url}`);
+      if (document.source.state !== undefined) {
+        lines.push(`State: ${document.source.state}`);
+      }
+      if (document.source.baseBranch !== undefined) {
+        lines.push(`Base: ${document.source.baseBranch}`);
+      }
+      if (document.source.headBranch !== undefined) {
+        lines.push(`Head: ${document.source.headBranch}`);
+      }
+      if (document.source.labels !== undefined) {
+        lines.push(`Labels: ${document.source.labels.join(", ")}`);
+      }
+      break;
     default:
       return assertNeverSource(document.source);
   }
