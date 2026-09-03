@@ -1,37 +1,41 @@
 # Page2Agent
 
-Turn the current browser page into structured, agent-ready context.
+> Turn web pages into structured, source-grounded context and tasks for AI agents.
 
-Page2Agent is a lightweight open-source Chrome / Edge extension that captures
-the page you are looking at, extracts it into a structured document, and
-produces two deliverables you can use immediately:
+A URL tells an agent *where to look*. Page2Agent tells the agent *what
+matters, what it means, and what to do with it*.
 
-- **Agent-ready Context** — a clearly separated, provider-neutral context block
-  with Page2Agent instructions and source facts.
-- **Source Markdown** — a faithful Markdown representation of the page content.
+Page2Agent is a lightweight, local-first Chrome / Edge (Manifest V3)
+extension that turns web pages into **Visual Context Workbench** output:
+understand the page, pick the parts that matter, combine several sources,
+choose what your agent should do, and inspect exactly what would be sent —
+as agent text, faithful Markdown, or a versioned **TaskSpec** JSON contract.
 
-Supported sources:
+## The six V1.1 capabilities
 
-- **Generic articles** — technical blog posts, docs pages, tutorials, and other
-  long-form content.
-- **GitHub Issues** — issue title, body, labels, and explicitly written
-  acceptance criteria (when the issue actually contains them).
-
-Everything runs locally inside the extension. There is no Page2Agent backend,
-no analytics, and no telemetry.
-
-## Features
-
-- Generic article extraction (Readability-based main-content detection)
-- GitHub Issue extraction with source acceptance criteria
-- Structured `NormalizedDocument` as the canonical model
-- Agent-ready context serialization with a prompt-injection trust boundary
-- Source Markdown serialization
-- Side Panel UI with Agent / Markdown previews
-- Copy for Agent, Copy Markdown, and Download Markdown
-- Safe filename generation
-- Strictly separated Source Content / Source-derived facts / Page2Agent
-  instructions
+1. **Context Lens** — a beautiful in-page visual picking mode. Semantic
+   regions (sections, code blocks, tables, lists, GitHub issue areas) are
+   highlighted on hover with live `estimated tokens`; one click includes or
+   excludes an area; the page DOM is never modified.
+2. **Context Cart** — combine multiple pages, picked sections and text
+   selections into one agent context. Roles (`Task`, `Reference`,
+   `Evidence`, `Example`, `Selection`), a single primary source, reorder,
+   undo, clear — light, session-only, private.
+3. **Context Recipes** — no prompt writing: pick what the agent should do —
+   `🧠 Learn`, `⚖️ Compare`, `🔍 Verify`, `🛠 Build`, `🐛 Fix`. Recipes are
+   suggested from the adapter analysis but the user stays in control.
+4. **Semantic Adapter 2.0** — Generic Article, GitHub Issue, GitHub Pull
+   Request, and Technical Documentation detection (honest fallback to
+   generic when confidence is insufficient).
+5. **TaskSpec** — a versioned, portable, deterministic JSON task contract
+   (sources, roles, provenance, explicit acceptance criteria only when the
+   source really provides them, unknowns, generated instructions, token
+   estimates) consumable by other tools (e.g. ContextForge) without
+   Page2Agent internals.
+6. **Context Receipt + Nutrition Label** — after capture (and after any
+   build) you see exactly what the agent will receive: Included/Excluded
+   facts, Generated vs Source separation, Unknowns, estimated tokens and
+   observable context facts. No fake quality scores.
 
 ## Install (development load)
 
@@ -44,67 +48,68 @@ npm ci
 npm run build
 ```
 
-Chrome:
-
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked** and select the `dist/` folder
-
-Edge:
-
-1. Open `edge://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked** and select the `dist/` folder
+Chrome: open `chrome://extensions` → enable **Developer mode** → **Load
+unpacked** → select the `dist/` folder. Edge: the same at `edge://extensions`.
 
 ## Usage
 
-1. Open a normal webpage (or a GitHub issue).
-2. Click the Page2Agent toolbar action on that page.
-3. The native Side Panel opens and capture starts automatically for that exact tab.
-4. Review the **Agent** or **Markdown** preview.
-5. **Copy for Agent**, **Copy Markdown**, or **Download Markdown**.
+### Fix an issue with supporting docs
 
-To capture again—or to capture a different tab—click the toolbar action on the
-target page. The persistent Side Panel does not claim a fresh `activeTab` grant.
+1. Open the GitHub issue you need to fix.
+2. Click the Page2Agent toolbar icon on that tab — the Side Panel opens,
+   capture runs, and the issue is identified.
+3. **Pick Context** — click only the relevant parts of the issue on the page,
+   then **Done** in the lens dock, and **Add to Context**.
+4. Open the official documentation, capture it, **+ Add to Context**.
+5. The Context Cart now holds 2 sources.
+6. Choose `🐛 Fix` (recommended for issue-backed contexts).
+7. Inspect the **Agent** / **Markdown** / **TaskSpec** tabs and the
+   **Context Receipt** — exactly what will the agent receive?
+8. **Copy for Agent** (or Copy JSON / Download JSON) and paste it into any
+   agent.
 
-For GitHub issues, the action mode is **Fix this issue** — that is an
-agent-ready context action, not direct execution. Page2Agent never runs
-commands or sends the context anywhere on its own.
+### Compare two pages
+
+1. Capture article A → **+ Add to Context**.
+2. Capture article B → **+ Add to Context** (Cart = 2).
+3. Choose `⚖️ Compare`. Single-source contexts can never produce a fake
+   comparison — Compare stays disabled until there are two sources.
+
+## Privacy & permissions
+
+- Capture is always user-triggered; nothing runs in the background.
+- Everything is processed locally inside the extension: **no backend, no
+  analytics, no telemetry, no provider keys, no cloud sync, no remote code**.
+- Permissions stay at the least-privilege minimum: `activeTab`, `scripting`,
+  `sidePanel`, `storage`. No `<all_urls>`, no host permissions, no `tabs`,
+  no browsing-data permissions.
+- Session state lives in `chrome.storage.session` only (cleared on browser
+  close); at most one captured document per window is cached; captured page
+  content is never written to `chrome.storage.local`.
 
 ## Architecture
 
 ```text
-Capture → Extract → Normalize → Package → Deliver
+Toolbar gesture → Capture → Semantic Adapter → NormalizedDocument
+  → Context Lens / text selection → ContextSource
+  → Context Cart → Recipe → TaskSpec → Agent | Markdown | JSON
+  → Context Receipt
 ```
 
-- **Side Panel** — user interaction, preview, copy, download.
-- **Service Worker** — capture orchestration, packaging, session state.
-- **Content Script** — programmatic, isolated-world DOM extraction.
-- **Adapters** — Generic Article and GitHub Issue extractors.
-- **Core** — domain model, validation, URL security, serialization.
-- **Application** — agent packaging and delivery helpers.
+- **Core** — domain contracts and validators (`NormalizedDocument`,
+  ContextSource/Cart, Recipes, TaskSpec, Receipt/Nutrition), the deterministic
+  token estimator, and source Markdown serialization. Markdown is a delivery
+  format; `NormalizedDocument` is canonical.
+- **Application** — TaskSpec building/JSON, agent/markdown text, selection
+  fragment documents.
+- **Adapters** — Generic Article, GitHub Issue, GitHub Pull Request,
+  Technical Documentation (registry: specific → generic, never the reverse).
+- **Extension** — Service Worker capture orchestration + lens router, content
+  script capture + lens engine, Side Panel workbench UI, session/cart storage.
 
-## Privacy
-
-- Capture is always user-triggered; nothing is captured in the background.
-- All processing happens locally in the extension.
-- No Page2Agent backend, no analytics, no telemetry, no provider API keys,
-  and no automatic upload.
-- Each browser window's latest capture result is stored only in
-  `chrome.storage.session` (cleared when the browser closes); no capture
-  history is kept.
-- Full page content is never written to `chrome.storage.local`.
-
-## Permissions
-
-- `activeTab` — temporary page access granted when the user invokes the
-  Page2Agent extension action on that tab.
-- `scripting` — programmatic content-script injection.
-- `sidePanel` — the Side Panel UI.
-- `storage` — session-only capture state.
-
-Page2Agent does not request `<all_urls>`, host permissions, `tabs`,
-`downloads`, or any browsing-data permissions.
+Source content, source-derived facts and Page2Agent-generated instructions
+are strictly separated in every layer; the prompt-injection trust boundary
+applies to every source in the cart.
 
 ## Development
 
@@ -118,43 +123,49 @@ npm run verify          fast deterministic gate (lint + typecheck + test + build
 npm run verify:all      verify + E2E
 ```
 
-`npm run test:e2e` uses a **test-only harness** (`dist-e2e/`, gitignored):
-the production build plus a test manifest that grants the local fixture origin
-(`http://127.0.0.1/*`) host access to replace the activeTab grant that GUI
-automation cannot reliably trigger. It emulates the action event with the
-exact active fixture tab through a localhost-build-only message, but does not
-validate the production activeTab grant UX or native Side Panel container.
+`npm run test:e2e` uses a **test-only harness** (`dist-e2e/`, gitignored): the
+production build plus a test manifest that grants only the local fixture
+origin (`http://127.0.0.1/*`) host access to emulate the action event, because
+GUI toolbar automation cannot reliably create an `activeTab` grant. It does
+not validate the production activeTab grant UX or the native Side Panel
+container.
 
 ## Testing
 
-- **Unit** — domain, validators, messaging, session, filename, preview.
-- **Integration** — extraction pipelines and packaging through fixtures.
-- **Component** — Side Panel states and actions (Testing Library).
-- **Browser E2E** — the built extension in real Chromium (Playwright).
-- **Manual browser QA** — native Side Panel, activeTab grant UX, real GitHub
-  pages; not automated.
+- **Unit** — domain, validators, messaging (incl. all lens messages), cart
+  reducers, receipts, session/caches, filename/preview.
+- **Integration** — adapters and TaskSpec pipelines against realistic offline
+  fixtures (Generic, GitHub Issue incl. modern task lists, GitHub PR,
+  Technical Docs, docs-lookalike pages that must stay Generic).
+- **Component** — Side Panel V1.1 states and flows (Testing Library).
+- **Browser E2E** — real Chromium with the built extension: capture,
+  Context Lens picking, Cart multi-source, recipe→TaskSpec mapping, docs
+  classification, receipts, restore/repeat/no-content paths.
 
 ## Limitations
 
-- `activeTab` grants expire with navigation/closure. Capture or recapture always
-  starts from a toolbar action on the target page; the persistent Side Panel
-  cannot authorize a newly switched tab by itself.
-- Readability-based extraction is heuristic; app-like or script-rendered-only
-  pages may not extract.
-- GitHub DOM changes can break the GitHub adapter over time.
-- iframes and PDFs are not captured.
-- GitHub issue comments are intentionally excluded from captures.
+- `activeTab` grants expire with navigation/closure; capture always starts
+  from a toolbar action on the target page.
+- Extraction is DOM/heuristic-based: app-like or script-rendered-only pages,
+  iframes and PDFs may not extract. GitHub DOM changes can break the GitHub
+  adapters over time; the Technical Docs classifier is deliberately
+  conservative (falls back to Generic).
+- Token counts are **estimated** (one deterministic heuristic), never
+  claimed equal to any model tokenizer.
 - The preview is plain text, not rendered Markdown.
-- Only the latest capture is kept; there is no history.
-- The generated trust boundary mitigates prompt injection — it does not make
-  the context immune to it.
+- Only session-scoped state is kept; there is no history, no accounts, no
+  sync. Context Lens visuals are not yet validated against a real headed
+  browser session in CI (manual QA item).
 
-## Roadmap (not in V0.1)
+## Ecosystem boundary
 
-- Native Messaging bridge for direct coding-agent integration
-- MCP / RAG connectors
-- Additional site adapters
-- Richer PDF handling
+Page2Agent produces TaskSpec + web context. Repository retrieval is a
+separate project's concern:
+
+```text
+Page2Agent    Web → TaskSpec
+ContextForge  TaskSpec + Repository → Repository Context
+```
 
 ## License
 

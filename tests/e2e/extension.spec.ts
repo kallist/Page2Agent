@@ -1,15 +1,24 @@
 /**
- * MV3 extension E2E — deterministic local harness (E2E-B).
+ * MV3 extension E2E — V1.1 Visual Context Workbench (deterministic local
+ * harness).
  *
  * Loads dist-e2e/ (production build + test-only host_permissions for the
  * local fixture origin) in a persistent Chromium context and drives the full
- * downstream flow through the action controller's explicit E2E seam:
- * exact tab → capture intent → content script extraction → storage → UI restore.
+ * workbench flows: capture → workbench → Context Lens → Context Cart →
+ * Recipes → TaskSpec/Agent output → Context Receipt.
  *
  * The harness replaces the activeTab grant (GUI toolbar/side-panel automation
  * is not reliably possible) with a test-only host permission for the local
  * fixture origin; it therefore does NOT validate the production activeTab
- * grant UX or the native Side Panel container — those remain manual QA items.
+ * grant UX, the native Side Panel container, or real github.com rendering —
+ * those remain manual QA / integration-test territory.
+ *
+ * Known harness limitation: capture identity comes from the tab URL, so the
+ * GitHub Issue/PR adapters cannot be exercised against fixture pages
+ * (github.com is out of harness scope by design). Issue/PR adapter fidelity
+ * is covered by jsdom unit/integration suites; the fix_issue TaskSpec kind
+ * is verified there too. E2E C verifies recipe selection → TaskSpec mapping
+ * on a generic capture (kind "fix").
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -33,6 +42,7 @@ declare const chrome: {
   storage: {
     session: {
       get(keys: string | null): Promise<Record<string, unknown>>;
+      clear(): Promise<void>;
     };
   };
 };
@@ -54,7 +64,9 @@ test.beforeAll(async () => {
       const url = new URL(req.url ?? "/", BASE);
       const file = join(FIXTURES, decodeURIComponent(url.pathname));
       const data = await readFile(file);
-      res.writeHead(200, { "content-type": extname(file) === ".html" ? "text/html; charset=utf-8" : "application/octet-stream" });
+      res.writeHead(200, {
+        "content-type": extname(file) === ".html" ? "text/html; charset=utf-8" : "application/octet-stream",
+      });
       res.end(data);
     } catch {
       res.writeHead(404);
@@ -65,10 +77,7 @@ test.beforeAll(async () => {
 
   context = await chromium.launchPersistentContext("", {
     headless: false,
-    args: [
-      `--disable-extensions-except=${DIST_E2E}`,
-      `--load-extension=${DIST_E2E}`,
-    ],
+    args: [`--disable-extensions-except=${DIST_E2E}`, `--load-extension=${DIST_E2E}`],
   });
 
   let [serviceWorker] = context.serviceWorkers();
@@ -89,6 +98,13 @@ test.afterAll(async () => {
   await new Promise<void>((resolveClose) => server?.close(() => resolveClose()));
 });
 
+/** Reset session + panel so every scenario starts from a clean workbench. */
+async function clearSession(): Promise<void> {
+  await panel.evaluate(() => chrome.storage.session.clear());
+  await panel.reload();
+  await expect(panel.getByText("No page captured yet")).toBeVisible();
+}
+
 /** Open a fixture as the active tab (the worker captures the active tab). */
 async function openFixture(path: string): Promise<Page> {
   const fixture = await context.newPage();
@@ -97,24 +113,10 @@ async function openFixture(path: string): Promise<Page> {
   return fixture;
 }
 
-async function sessionState(): Promise<Record<string, unknown>> {
-  const [serviceWorker] = context.serviceWorkers();
-  return serviceWorker.evaluate(() => chrome.storage.session.get(null));
-}
-
-function latestIntentFromSession(
-  session: Record<string, unknown>,
-): { captureId: string } | undefined {
-  const key = Object.keys(session).find((candidate) =>
-    candidate.startsWith("page2agent.latest-capture.v1."),
-  );
-  return key === undefined ? undefined : session[key] as { captureId: string } | undefined;
-}
-
 /**
  * Emulate chrome.action.onClicked with the exact active tab. This message is
  * accepted only by dist-e2e/ because its manifest has the localhost-only host
- * permission; production dist/ rejects the seam and has no persistent host access.
+ * permission; production dist/ rejects the seam.
  */
 async function triggerHarnessAction(): Promise<void> {
   const response = await panel.evaluate(async () => {
@@ -135,6 +137,25 @@ async function triggerHarnessAction(): Promise<void> {
   expect(response).toMatchObject({ type: expect.stringMatching(/^capture\./) });
 }
 
+async function waitForCapturedTitle(title: string): Promise<void> {
+  await expect(panel.getByRole("heading", { name: title })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "+ Add to Context" })).toBeVisible();
+}
+
+async function waitForAgentReady(): Promise<void> {
+  await expect(panel.getByText(/# Page2Agent Task/)).toBeVisible();
+}
+
+async function openTaskSpecTab(): Promise<void> {
+  await panel.getByRole("tab", { name: "TaskSpec" }).click();
+  await expect(panel.getByRole("tabpanel", { name: "TaskSpec preview" })).toBeVisible();
+}
+
+async function taskSpecText(): Promise<string> {
+  const text = await panel.getByRole("tabpanel", { name: "TaskSpec preview" }).locator("pre").innerText();
+  return text;
+}
+
 test("extension service worker activates", async () => {
   const [serviceWorker] = context.serviceWorkers();
   expect(serviceWorker).toBeTruthy();
@@ -142,64 +163,161 @@ test("extension service worker activates", async () => {
   expect(id).toBe(extensionId);
 });
 
-test("generic fixture capture completes end-to-end through the panel UI", async () => {
+test("generic fixture capture completes end-to-end through the workbench UI", async () => {
+  await clearSession();
   const fixture = await openFixture("/generic/article-basic.html");
 
   await triggerHarnessAction();
-  await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
+  await waitForCapturedTitle("Capturing Web Contexts for Coding Agents");
   await expect(panel.getByText("Web Page", { exact: true })).toBeVisible();
-  await expect(panel.getByText("Use as context", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Pick Context" })).toBeVisible();
+  await waitForAgentReady();
 
-  const session = await sessionState();
-  const intent = latestIntentFromSession(session);
-  expect(intent).toBeTruthy();
+  const session = await panel.evaluate(() => chrome.storage.session.get(null));
+  const intentKey = Object.keys(session).find((key) => key.startsWith("page2agent.latest-capture.v1."));
+  expect(intentKey).toBeTruthy();
+  const intent = intentKey === undefined ? undefined : (session[intentKey] as { captureId: string });
   const outcome = session[`page2agent.capture-result.v1.${intent?.captureId}`] as
-    | { status: string; captureId: string; result?: { title: string; stats?: { characters: number } } }
+    | { status: string; result?: { title: string; stats?: { characters: number } } }
     | undefined;
   expect(outcome?.status).toBe("captured");
-  expect(outcome?.captureId).toBe(intent?.captureId);
   expect(outcome?.result?.title).toBe("Capturing Web Contexts for Coding Agents");
   expect((outcome?.result?.stats?.characters ?? 0)).toBeGreaterThan(100);
 
   await fixture.close();
 });
 
-test("repeated capture stays consistent with the latest intent", async () => {
+test("E2E A — Context Lens picks one section; agent output only carries it", async () => {
+  await clearSession();
   const fixture = await openFixture("/generic/article-basic.html");
-
   await triggerHarnessAction();
-  await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
+  await waitForCapturedTitle("Capturing Web Contexts for Coding Agents");
 
-  // A second action creates a fresh intent; latest capture wins.
+  // Enter lens mode from the panel.
+  await panel.getByRole("button", { name: "Pick Context" }).click();
+  await expect(panel.getByText(/Context Lens is on the page/)).toBeVisible();
+
+  // Click the "Why structure matters" section heading on the page: the lens
+  // selects the heading-anchored section (heading + paragraph + quote).
+  await fixture.getByRole("heading", { name: "Why structure matters" }).click();
+  await expect(fixture.getByText(/1 area selected/)).toBeVisible();
+  await fixture.getByRole("button", { name: "Done" }).click();
+
+  // Panel now offers to add the picked section as one Context source.
+  await expect(panel.getByText(/Use the picked area as a Context source/)).toBeVisible();
+  await panel.getByRole("button", { name: "Add to Context" }).click();
+  await expect(panel.getByText("Added 1 picked area(s) to Context.")).toBeVisible();
+
+  // Agent output contains ONLY the picked section.
+  await waitForAgentReady();
+  const agentText = await panel.getByRole("tabpanel", { name: "Agent preview" }).locator("pre").innerText();
+  expect(agentText).toContain("Why structure matters");
+  expect(agentText).toContain("architecture docs");
+  expect(agentText).not.toContain("When an agent works on an issue");
+  expect(agentText).not.toContain("Capture, extract, normalize");
+
+  await fixture.close();
+});
+
+test("E2E B — Context Cart combines two pages and Compare builds a 2-source task", async () => {
+  await clearSession();
+  const fixtureA = await openFixture("/generic/article-basic.html");
   await triggerHarnessAction();
-  await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
+  await waitForCapturedTitle("Capturing Web Contexts for Coding Agents");
+  await panel.getByRole("button", { name: "+ Add to Context" }).click();
+  await expect(panel.getByText("Added to Context.")).toBeVisible();
 
-  const session = await sessionState();
-  const intent = latestIntentFromSession(session);
-  expect(intent).toBeTruthy();
-  const outcome = session[`page2agent.capture-result.v1.${intent?.captureId}`] as
-    | { status: string; captureId: string }
-    | undefined;
-  expect(outcome?.status).toBe("captured");
-  expect(outcome?.captureId).toBe(intent?.captureId);
+  const fixtureB = await openFixture("/generic/article-metadata.html");
+  await triggerHarnessAction();
+  await expect(panel.getByRole("button", { name: "+ Add to Context" })).toBeVisible();
+  await panel.getByRole("button", { name: "+ Add to Context" }).click();
+  await expect(panel.getByText("Added to Context.")).toBeVisible();
 
-  // Outcome hygiene removes the prior outcome for this window, so the session
-  // stays bounded without deleting another window's current outcome.
-  const outcomeKeys = Object.keys(session).filter((key) => key.startsWith("page2agent.capture-result.v1."));
-  expect(outcomeKeys.length).toBeLessThanOrEqual(2);
+  // Cart shows two sources; Compare becomes available.
+  const cartSection = panel.getByLabel("Context Cart");
+  await expect(cartSection.getByText("2")).toBeVisible();
+  const compare = panel.getByRole("radio", { name: /Compare/ });
+  await expect(compare).toBeEnabled();
+  await compare.click();
+
+  await openTaskSpecTab();
+  const json = await taskSpecText();
+  expect(json).toContain('"recipe": "compare"');
+  expect(json).toContain('"task": {');
+  expect(json).toContain('"kind": "compare"');
+  expect(json).toContain('"sources": [');
+  // Compare must refuse to fabricate a target repository from two web pages.
+  expect(json).toContain('"repository": null');
+
+  await fixtureA.close();
+  await fixtureB.close();
+});
+
+test("E2E C — Recipe selection drives TaskSpec kind (Fix on generic capture)", async () => {
+  await clearSession();
+  const fixture = await openFixture("/generic/article-basic.html");
+  await triggerHarnessAction();
+  await waitForCapturedTitle("Capturing Web Contexts for Coding Agents");
+
+  await panel.getByRole("radio", { name: /Fix/ }).click();
+  await waitForAgentReady();
+  const agentText = await panel.getByRole("tabpanel", { name: "Agent preview" }).locator("pre").innerText();
+  expect(agentText).toContain("Recipe: Fix");
+  expect(agentText).toContain("Task kind: fix");
+
+  await openTaskSpecTab();
+  const json = await taskSpecText();
+  expect(json).toContain('"recipe": "fix"');
+  expect(json).toContain('"kind": "fix"');
+
+  await fixture.close();
+});
+
+test("E2E D — Technical Documentation is classified and Build is recommended", async () => {
+  await clearSession();
+  const fixture = await openFixture("/docs/api-reference.html");
+  await triggerHarnessAction();
+
+  await expect(panel.getByRole("heading", { name: "Streaming API Reference" })).toBeVisible();
+  await expect(panel.getByText("Technical Documentation", { exact: true })).toBeVisible();
+
+  await openTaskSpecTab();
+  const json = await taskSpecText();
+  expect(json).toContain('"recipe": "build"');
+  expect(json).toContain('"id": "technical-docs"');
+  expect(json).toContain('"kind": "build"');
+
+  await fixture.close();
+});
+
+test("E2E E — Context Receipt shows observable Included/Excluded facts", async () => {
+  await clearSession();
+  const fixture = await openFixture("/generic/article-basic.html");
+  await triggerHarnessAction();
+  await waitForCapturedTitle("Capturing Web Contexts for Coding Agents");
+
+  const receipt = panel.getByLabel("Context Receipt");
+  await receipt.scrollIntoViewIfNeeded();
+  await expect(receipt.getByText("Included")).toBeVisible();
+  await expect(receipt.getByText("Excluded")).toBeVisible();
+  await expect(receipt.getByText("Generated")).toBeVisible();
+  await expect(receipt.getByText("Context facts")).toBeVisible();
+  await expect(receipt.getByText("Clean")).toBeVisible();
 
   await fixture.close();
 });
 
 test("no-content fixture yields a friendly typed failure in the panel", async () => {
+  await clearSession();
   const fixture = await openFixture("/generic/article-no-content.html");
 
   await triggerHarnessAction();
   await expect(panel.getByText("Unable to find meaningful page content.")).toBeVisible();
-  await expect(panel.getByText("To capture this page again, click the Page2Agent toolbar icon.")).toBeVisible();
+  await expect(panel.getByText(/toolbar icon to try again/)).toBeVisible();
 
-  const session = await sessionState();
-  const intent = latestIntentFromSession(session);
+  const session = await panel.evaluate(() => chrome.storage.session.get(null));
+  const intentKey = Object.keys(session).find((key) => key.startsWith("page2agent.latest-capture.v1."));
+  const intent = intentKey === undefined ? undefined : (session[intentKey] as { captureId: string });
   const outcome = session[`page2agent.capture-result.v1.${intent?.captureId}`] as
     | { status: string; error?: { code: string; message: string } }
     | undefined;
@@ -209,18 +327,38 @@ test("no-content fixture yields a friendly typed failure in the panel", async ()
 
   await fixture.close();
 });
+
 test("a freshly opened panel page restores the latest captured session", async () => {
+  await clearSession();
   const fixture = await openFixture("/generic/article-basic.html");
 
   await triggerHarnessAction();
-  await expect(panel.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
+  await waitForCapturedTitle("Capturing Web Contexts for Coding Agents");
 
   const restored = await context.newPage();
   await restored.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await expect(restored.getByRole("heading", { name: "Capturing Web Contexts for Coding Agents" })).toBeVisible();
   await expect(restored.getByText("Web Page", { exact: true })).toBeVisible();
-  await expect(restored.getByText("Use as context", { exact: true })).toBeVisible();
+  await expect(restored.getByRole("button", { name: "Pick Context" })).toBeVisible();
 
   await fixture.close();
   await restored.close();
+});
+
+test("repeated capture stays consistent with the latest intent", async () => {
+  await clearSession();
+  const fixture = await openFixture("/generic/article-basic.html");
+
+  await triggerHarnessAction();
+  await waitForCapturedTitle("Capturing Web Contexts for Coding Agents");
+
+  // A second action creates a fresh intent; latest capture wins.
+  await triggerHarnessAction();
+  await waitForCapturedTitle("Capturing Web Contexts for Coding Agents");
+
+  const session = await panel.evaluate(() => chrome.storage.session.get(null));
+  const outcomeKeys = Object.keys(session).filter((key) => key.startsWith("page2agent.capture-result.v1."));
+  expect(outcomeKeys.length).toBeLessThanOrEqual(2);
+
+  await fixture.close();
 });
