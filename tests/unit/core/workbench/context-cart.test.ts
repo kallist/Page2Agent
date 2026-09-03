@@ -181,6 +181,61 @@ describe("cart mutations", () => {
     expect(moved.cart.items.map((item) => item.id)).toEqual(["item-2", "item-1"]);
   });
 
+  it("moves items downward and reaches the last slot", () => {
+    let cart = createEmptyCart();
+    for (const item of ["a", "b", "c", "d"].map((id) => webItem(`item-${id}`, `https://example.com/${id}`))) {
+      const added = addContextSource(cart, item);
+      if (added.status !== "added") {
+        throw new Error("expected added");
+      }
+      cart = added.cart;
+    }
+    const down = moveContextSource(cart, "item-a", 2);
+    if (down.status !== "moved") {
+      throw new Error("expected moved");
+    }
+    expect(down.cart.items.map((item) => item.id)).toEqual([
+      "item-b",
+      "item-c",
+      "item-a",
+      "item-d",
+    ]);
+    const toLast = moveContextSource(down.cart, "item-d", 0);
+    if (toLast.status !== "moved") {
+      throw new Error("expected moved");
+    }
+    expect(toLast.cart.items.map((item) => item.id)).toEqual([
+      "item-d",
+      "item-b",
+      "item-c",
+      "item-a",
+    ]);
+    const backDown = moveContextSource(toLast.cart, "item-d", 3);
+    if (backDown.status !== "moved") {
+      throw new Error("expected moved");
+    }
+    expect(backDown.cart.items.map((item) => item.id)).toEqual([
+      "item-b",
+      "item-c",
+      "item-a",
+      "item-d",
+    ]);
+  });
+
+  it("keeps the undo snapshot on no-op moves", () => {
+    const cart = cartWithTwoSources();
+    const removed = removeContextSource(cart, "item-1");
+    if (removed.status !== "removed") {
+      throw new Error("expected removed");
+    }
+    const noop = moveContextSource(removed.cart, "item-2", 0);
+    if (noop.status !== "moved") {
+      throw new Error("expected moved");
+    }
+    const restored = undoContextCartChange(noop.cart);
+    expect(restored.status).toBe("restored");
+  });
+
   it("sets roles and primary deterministically", () => {
     const cart = cartWithTwoSources();
     const roleSet = setContextSourceRole(cart, "item-2", "evidence");
@@ -207,17 +262,31 @@ describe("cart mutations", () => {
     }
   });
 
-  it("keeps undo single-shot (later ops forget the snapshot)", () => {
+  it("keeps undo single-shot (real later changes forget the snapshot)", () => {
     const cart = cartWithTwoSources();
     const removed = removeContextSource(cart, "item-1");
     if (removed.status !== "removed") {
       throw new Error("expected removed");
     }
-    const moved = moveContextSource(removed.cart, "item-2", 0);
-    if (moved.status !== "moved") {
+    // A no-op move (same position) is not a state change and must NOT drop
+    // the undo snapshot...
+    const noop = moveContextSource(removed.cart, "item-2", 0);
+    if (noop.status !== "moved") {
       throw new Error("expected moved");
     }
-    const nothing = undoContextCartChange(moved.cart);
+    const restored = undoContextCartChange(noop.cart);
+    expect(restored.status).toBe("restored");
+
+    // ...but any real change afterwards forgets the previous snapshot.
+    const removedAgain = removeContextSource(restored.cart, "item-2");
+    if (removedAgain.status !== "removed") {
+      throw new Error("expected removed");
+    }
+    const added = addContextSource(removedAgain.cart, webItem("item-new", "https://example.com/new"));
+    if (added.status !== "added") {
+      throw new Error("expected added");
+    }
+    const nothing = undoContextCartChange(added.cart);
     expect(nothing.status).toBe("nothing-to-undo");
   });
 

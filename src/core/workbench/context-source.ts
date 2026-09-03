@@ -142,14 +142,25 @@ function isSourceDescriptorKind(value: unknown): value is SourceDescriptor["kind
  * Canonical dedupe identity. Full-page sources match on (kind + url) so
  * re-capturing the same page cannot silently stack copies; picked sources
  * match on (captureId + scope + selection labels) because one pick session
- * is one unit even when the page changed between captures.
+ * is one unit even when the page changed between captures. URLs are
+ * compared without fragments (same page, different scroll anchors).
  */
 export function contextSourceDedupeKey(item: ContextSourceItem): string {
   if (item.scope === "full-page") {
-    return `full-page|${item.sourceKind}|${item.url}`;
+    return `full-page|${item.sourceKind}|${canonicalDedupeUrl(item.url)}`;
   }
   const labels = (item.selection?.labels ?? []).join("\u0001");
-  return `${item.scope}|${item.captureId}|${item.url}|${labels}`;
+  return `${item.scope}|${item.captureId}|${canonicalDedupeUrl(item.url)}|${labels}`;
+}
+
+function canonicalDedupeUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    url.hash = "";
+    return url.href;
+  } catch {
+    return rawUrl;
+  }
 }
 
 /** New instance id for a cart item (random UUID — never part of content). */

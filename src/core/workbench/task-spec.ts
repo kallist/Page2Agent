@@ -267,5 +267,13 @@ export function isTaskSpec(value: unknown): value is TaskSpec {
 
 function isRepositoryName(value: string): boolean {
   const parts = value.split("/");
-  return parts.length === 2 && parts.every((part) => part.length > 0 && part.length <= 100);
+  if (parts.length !== 2) {
+    return false;
+  }
+  const segment = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/;
+  return (
+    segment.test(parts[0]) &&
+    segment.test(parts[1]) &&
+    parts[0].length + parts[1].length <= 200
+  );
 }

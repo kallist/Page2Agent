@@ -199,6 +199,76 @@ describe("Page2Agent V1.1 side panel", () => {
     expect(within(receipt!).getByText("Context facts")).toBeTruthy();
   });
 
+  it("keeps rendering cleanly when the chosen recipe becomes gated after clearing the cart", async () => {
+    const storage = makeStorage();
+    seedCapturedPage(storage);
+    // Pre-seed a two-source cart so Compare can be chosen first.
+    const { addContextSource, createEmptyCart } = await import("../../../../src/core");
+    const { makeWebDocument } = await import("../../../helpers/workbench-fixtures");
+    const docA = makeWebDocument({
+      source: { kind: "web", url: "https://example.com/a", site: "example.com" },
+      metadata: { title: "Page A", capturedAt: "2026-09-01T00:00:00.000Z" },
+    });
+    const docB = makeWebDocument({
+      source: { kind: "web", url: "https://example.com/b", site: "example.com" },
+      metadata: { title: "Page B", capturedAt: "2026-09-01T00:00:00.000Z" },
+    });
+    const items = [
+      {
+        id: "a",
+        captureId: "cap-a",
+        url: "https://example.com/a",
+        capturedAt: docA.metadata.capturedAt,
+        title: "Page A",
+        sourceKind: "web" as const,
+        adapter: { id: "generic-article", name: "Generic Article" },
+        scope: "full-page" as const,
+        role: "task" as const,
+        primary: true,
+        document: docA,
+      },
+      {
+        id: "b",
+        captureId: "cap-b",
+        url: "https://example.com/b",
+        capturedAt: docB.metadata.capturedAt,
+        title: "Page B",
+        sourceKind: "web" as const,
+        adapter: { id: "generic-article", name: "Generic Article" },
+        scope: "full-page" as const,
+        role: "reference" as const,
+        primary: false,
+        document: docB,
+      },
+    ];
+    let cart = createEmptyCart();
+    for (const item of items) {
+      const added = addContextSource(cart, item as never);
+      if (added.status !== "added") {
+        throw new Error("expected added");
+      }
+      cart = added.cart;
+    }
+    storage.data[workbenchCartKey(5)] = cart;
+    void docB;
+
+    renderApp({ storage, session: capturedSession() });
+
+    // Two sources: Compare is selectable.
+    const compare = (await screen.findByRole("radio", { name: /Compare/ })) as HTMLButtonElement;
+    expect(compare.disabled).toBe(false);
+    await userEvent.click(compare);
+
+    // Clear the cart: the capture candidate becomes the only source again,
+    // the persisted Compare choice is gated — the panel must not crash.
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Compare needs at least 2 sources in the Context/)).toBeTruthy();
+    });
+    expect(screen.queryByText("Context Receipt")).toBeNull();
+    expect(screen.getByText("Example Article")).toBeTruthy();
+  });
+
   it("shows a friendly error state with a recovery hint", async () => {
     const session: CaptureSessionDeps = {
       ...SESSION_DEPS,

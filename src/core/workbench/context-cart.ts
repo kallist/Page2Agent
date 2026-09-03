@@ -126,14 +126,24 @@ export type ReorderResult =
   | { status: "moved"; cart: ContextCart }
   | { status: "not-found"; cart: ContextCart };
 
-/** Move an item to a new index (stable: removes then inserts at target). */
+/** Move an item to a new index (stable: removes then inserts at target).
+ *
+ * Insertion index semantics: removing the item shifts every later sibling
+ * left by one, so inserting the removed item back at the (clamped) target
+ * index yields the requested final position for BOTH directions — e.g.
+ * 0 → 1: remove 0 → [b,c,…], insert at 1 → [b,a,c,…]; 3 → 1: remove 3 →
+ * [a,b,c,…], insert at 1 → [a,x,b,c,…].
+ */
 export function moveContextSource(cart: ContextCart, itemId: string, toIndex: number): ReorderResult {
   const current = cart.items.findIndex((item) => item.id === itemId);
   if (current < 0) {
     return { status: "not-found", cart: withoutUndo(cart) };
   }
-  const clamped = clampIndex(toIndex, cart.items.length);
-  const target = current < clamped ? clamped - 1 : clamped; // after removal semantics
+  if (current === clampIndex(toIndex, cart.items.length)) {
+    // No-op move: report success without dropping the undo snapshot.
+    return { status: "moved", cart };
+  }
+  const target = clampIndex(toIndex, cart.items.length);
   const without = cart.items.filter((item) => item.id !== itemId);
   const items = [...without.slice(0, target), cart.items[current], ...without.slice(target)];
   const next: ContextCart = { schemaVersion: CONTEXT_CART_SCHEMA_VERSION, items };

@@ -83,7 +83,13 @@ export function buildTaskSpec(cart: ContextCart, recipe: RecipeId): BuildTaskSpe
   const items = cart.items;
   const primary = primaryContextSource(cart);
   const primaryId = primary?.id ?? null;
-  const issueSource = items.find((item) => item.sourceKind === "github_issue") ?? undefined;
+  // Multi-issue carts: the TASK-shaped issue (role task or primary) leads AC
+  // extraction; any other issue is evidence/reference and stays out of the
+  // single requirements object (per-source AC modeling is out of scope).
+  const issueSource =
+    items.find((item) => item.sourceKind === "github_issue" && isTaskShaped(item)) ??
+    items.find((item) => item.sourceKind === "github_issue") ??
+    undefined;
   const kind = taskKindForRecipe(recipe, issueSource !== undefined);
 
   const sources: TaskSpecSource[] = items.map((item) => buildSource(item, item.id === primaryId));
@@ -145,6 +151,10 @@ export function buildTaskSpec(cart: ContextCart, recipe: RecipeId): BuildTaskSpe
 
 function isTaskSpecBuildable(cart: ContextCart): boolean {
   return cart.items.length > 0 && cart.items.every((item) => item.document.blocks.length > 0);
+}
+
+function isTaskShaped(item: ContextSourceItem): boolean {
+  return item.role === "task" || item.primary;
 }
 
 function buildSource(item: ContextSourceItem, isPrimary: boolean): TaskSpecSource {

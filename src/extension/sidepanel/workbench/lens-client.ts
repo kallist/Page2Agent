@@ -40,9 +40,18 @@ export interface PanelLensClient {
 }
 
 export function createPanelLensClient(deps: PanelLensClientDeps): PanelLensClient {
+  /** A rejected runtime send becomes a null response → typed failure below. */
+  async function send(message: unknown): Promise<unknown> {
+    try {
+      return await deps.request(message);
+    } catch {
+      return null;
+    }
+  }
+
   return {
     async enter(tabId, session) {
-      const response = await deps.request({
+      const response = await send({
         type: "lens.enter.request",
         tabId,
         session,
@@ -54,7 +63,7 @@ export function createPanelLensClient(deps: PanelLensClientDeps): PanelLensClien
     },
 
     async materialize(tabId, session) {
-      const response = await deps.request({
+      const response = await send({
         type: "lens.materialize.request",
         tabId,
         session,
@@ -71,7 +80,7 @@ export function createPanelLensClient(deps: PanelLensClientDeps): PanelLensClien
     },
 
     async clear(tabId, captureId) {
-      const response = await deps.request({ type: "lens.clear.request", tabId, captureId });
+      const response = await send({ type: "lens.clear.request", tabId, captureId });
       if (isLensClearResponse(response)) {
         return response;
       }
@@ -79,7 +88,7 @@ export function createPanelLensClient(deps: PanelLensClientDeps): PanelLensClien
     },
 
     async probeSelection(tabId, session) {
-      const response = await deps.request({
+      const response = await send({
         type: "lens.selection.probe.request",
         tabId,
         session,
@@ -96,7 +105,7 @@ export function createPanelLensClient(deps: PanelLensClientDeps): PanelLensClien
     },
 
     async captureSelection(tabId, session) {
-      const response = await deps.request({
+      const response = await send({
         type: "lens.selection.capture.request",
         tabId,
         session,

@@ -22,7 +22,7 @@
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, chromium } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
@@ -62,10 +62,17 @@ test.beforeAll(async () => {
   server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", BASE);
-      const file = join(FIXTURES, decodeURIComponent(url.pathname));
-      const data = await readFile(file);
+      // Serve fixtures ONLY: reject traversal so the local test server can
+      // never expose files outside the fixtures directory.
+      const requested = resolve(FIXTURES, `.${sep}${decodeURIComponent(url.pathname)}`);
+      if (requested !== FIXTURES && !requested.startsWith(`${FIXTURES}${sep}`)) {
+        res.writeHead(404);
+        res.end("not found");
+        return;
+      }
+      const data = await readFile(requested);
       res.writeHead(200, {
-        "content-type": extname(file) === ".html" ? "text/html; charset=utf-8" : "application/octet-stream",
+        "content-type": extname(requested) === ".html" ? "text/html; charset=utf-8" : "application/octet-stream",
       });
       res.end(data);
     } catch {

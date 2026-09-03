@@ -186,7 +186,7 @@ function WorkbenchView({
         </p>
       )}
 
-      {workbench.outputs !== null && (
+      {workbench.outputs !== null && workbench.outputs.recipeGate === null && (
         <ReceiptSection workbench={workbench} />
       )}
 
