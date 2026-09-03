@@ -212,7 +212,7 @@ test("E2E A — Context Lens picks one section; agent output only carries it", a
 
   // Panel now offers to add the picked section as one Context source.
   await expect(panel.getByText(/Use the picked area as a Context source/)).toBeVisible();
-  await panel.getByRole("button", { name: "Add to Context" }).click();
+  await panel.getByRole("button", { name: "Add to Context", exact: true }).click();
   await expect(panel.getByText("Added 1 picked area(s) to Context.")).toBeVisible();
 
   // Agent output contains ONLY the picked section.
@@ -242,7 +242,7 @@ test("E2E B — Context Cart combines two pages and Compare builds a 2-source ta
 
   // Cart shows two sources; Compare becomes available.
   const cartSection = panel.getByLabel("Context Cart");
-  await expect(cartSection.getByText("2")).toBeVisible();
+  await expect(cartSection.getByText("2", { exact: true })).toBeVisible();
   const compare = panel.getByRole("radio", { name: /Compare/ });
   await expect(compare).toBeEnabled();
   await compare.click();
@@ -286,7 +286,9 @@ test("E2E D — Technical Documentation is classified and Build is recommended",
   await triggerHarnessAction();
 
   await expect(panel.getByRole("heading", { name: "Streaming API Reference" })).toBeVisible();
-  await expect(panel.getByText("Technical Documentation", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByLabel("Captured source").getByText("Technical Documentation", { exact: true }),
+  ).toBeVisible();
 
   await openTaskSpecTab();
   const json = await taskSpecText();
@@ -307,7 +309,7 @@ test("E2E E — Context Receipt shows observable Included/Excluded facts", async
   await receipt.scrollIntoViewIfNeeded();
   await expect(receipt.getByText("Included")).toBeVisible();
   await expect(receipt.getByText("Excluded")).toBeVisible();
-  await expect(receipt.getByText("Generated")).toBeVisible();
+  await expect(receipt.getByText("Generated", { exact: true })).toBeVisible();
   await expect(receipt.getByText("Context facts")).toBeVisible();
   await expect(receipt.getByText("Clean")).toBeVisible();
 
