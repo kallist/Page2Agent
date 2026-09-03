@@ -282,8 +282,14 @@ export function useWorkbench(
     if (!ready || candidate === null) {
       return null;
     }
+    // Never derive outputs from a PREVIOUS capture's candidate: between the
+    // moment a capture changes and the async state reload completes, the old
+    // candidate is discarded instead of rendered stale.
+    if (captureId !== null && candidate.captureId !== captureId) {
+      return null;
+    }
     return deriveWorkbenchOutputs({ cart, candidate, selectedRecipe });
-  }, [ready, cart, candidate, selectedRecipe]);
+  }, [ready, cart, candidate, selectedRecipe, captureId]);
 
   async function addCaptureToCart(): Promise<void> {
     const current = resultRef.current;
