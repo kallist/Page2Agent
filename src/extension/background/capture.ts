@@ -41,6 +41,7 @@ import {
 } from "../session/session-storage";
 import type { SessionStorage } from "../session/session-storage";
 import type { CaptureOutcome } from "../session/session-state";
+import { writeWindowDocument } from "../session/document-cache";
 
 export interface TabInfo {
   id?: number;
@@ -176,6 +177,10 @@ export async function captureExactTab(
       const error = failureView(Page2AgentErrorCode.CAPTURE_FAILED);
       return { type: CAPTURE_FAILURE, captureId, error };
     }
+    // V1.1: cache the structured document for THIS window so the panel can
+    // add the capture to the Context Cart. Session-only, one record per
+    // window; a cache failure never fails the capture itself.
+    await cacheWindowDocumentSafely(deps, windowId, captureId, response.document);
     return { type: CAPTURE_SUCCESS, captureId, result };
   } catch (error) {
     const safeError = toCaptureErrorView(error);
@@ -238,6 +243,27 @@ function deterministicTitleFallback(url: string): string {
     return new URL(url).hostname || "page";
   } catch {
     return "page";
+  }
+}
+
+/**
+ * Best-effort V1.1 document cache write. Failure is hygiene-only: the
+ * capture result itself is already committed at this point.
+ */
+async function cacheWindowDocumentSafely(
+  deps: CaptureRuntimeDeps,
+  windowId: number,
+  captureId: string,
+  document: NormalizedDocument,
+): Promise<void> {
+  try {
+    await writeWindowDocument(deps.storage, windowId, {
+      schemaVersion: 1,
+      captureId,
+      document,
+    });
+  } catch {
+    // ignore: cache write failures never fail the capture
   }
 }
 

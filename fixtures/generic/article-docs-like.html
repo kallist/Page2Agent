@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Tips for consuming our streaming API | Acme Engineering Blog</title>
+    <meta property="og:type" content="article">
+    <meta property="article:published_time" content="2026-08-01T09:00:00.000Z">
+    <link rel="canonical" href="https://example.com/blog/streaming-api-tips">
+  </head>
+  <body>
+    <header class="site-header">
+      <nav aria-label="Site">
+        <a href="/">Home</a><a href="/blog">Blog</a><a href="/about">About</a>
+      </nav>
+    </header>
+
+    <main>
+      <article class="post">
+        <h1>Tips for consuming our streaming API</h1>
+        <div class="post-meta">
+          <a class="author" href="/team/chen">Chen</a> · <time datetime="2026-08-01T09:00:00.000Z">Aug 1, 2026</time>
+        </div>
+        <p>Last week we shipped the streaming API. Our team learned a few things
+           the hard way while building the first clients, and this post collects
+           those lessons so your integration starts smoother than ours did.</p>
+
+        <h2>Why we went with SSE</h2>
+        <p>Server-sent events keep the connection simple and play nicely with
+           proxies. We compared websockets first, but SSE covered the use case
+           with far less operational surface. The client only needs to parse
+           <code>text/event-stream</code> and reconnect on drops.</p>
+        <pre><code>const events = new EventSource("/v1/stream");
+events.onmessage = (event) => append(event.data);</code></pre>
+
+        <h2>Our favorite debugging trick</h2>
+        <p>Pipe the stream through a tee to watch bytes while your tests run.
+           It sounds obvious but it saved us twice this month, especially for
+           flaky proxy behavior in staging. The trick also works for the
+           batching endpoint.</p>
+        <pre><code>curl ... | tee /tmp/stream.log | jq -R 'fromjson?'</code></pre>
+
+        <h2>What we would do differently</h2>
+        <p>We would ship a retry budget in the SDK from day one. Our first
+           clients retried aggressively and amplified load during the beta.
+           Next time, exponential backoff with jitter goes in the very first
+           release, documented next to the timeout options in the API docs.</p>
+
+        <p>Thanks for reading — leave a comment below if you hit any rough
+           edges with the streaming endpoint and we will follow up.</p>
+      </article>
+    </main>
+
+    <aside class="sidebar">
+      <section>
+        <h3>Recent posts</h3>
+        <ul>
+          <li><a href="/blog/streaming-api-tips">Tips for consuming our streaming API</a></li>
+          <li><a href="/blog/batching-announcement">Batching is here</a></li>
+          <li><a href="/blog/on-call-playbook">On-call playbook</a></li>
+        </ul>
+      </section>
+    </aside>
+  </body>
+</html>

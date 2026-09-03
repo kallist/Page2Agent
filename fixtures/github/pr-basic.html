@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Fix slow image ingest · acme/page2agent-demo · Pull Request #58</title>
+    <link rel="canonical" href="https://github.com/acme/page2agent-demo/pull/58">
+  </head>
+  <body>
+    <header class="Header" data-testid="site-header">
+      <nav aria-label="Global"><a href="/">Home</a><a href="/acme/page2agent-demo">Repository</a></nav>
+    </header>
+
+    <div id="partial-discussion-header" class="gh-header clearfix" data-testid="pr-header">
+      <div class="gh-header-show">
+        <h1 class="gh-header-title">
+          <span class="js-issue-title" data-testid="pr-header-title">Fix slow image ingest</span>
+          <span class="gh-header-number">#58</span>
+        </h1>
+        <div class="gh-header-status">
+          <span class="State State--green" data-testid="pr-header-state">Open</span>
+          <span class="State State--purple">Draft</span>
+        </div>
+        <div class="gh-header-meta">
+          <span>ada wants to merge 3 commits into </span>
+          <span class="commit-ref css-truncate user-select-contain expandable">
+            <a class="no-underline" href="/acme/page2agent-demo/tree/main"><span>main</span></a>
+          </span>
+          <span> from </span>
+          <span class="commit-ref css-truncate user-select-contain expandable">
+            <a class="no-underline" href="/acme/page2agent-demo/tree/fix/slow-ingest"><span>fix/slow-ingest</span></a>
+          </span>
+          <a class="author" href="/ada">ada</a>
+        </div>
+      </div>
+    </div>
+
+    <main data-testid="pr-conversation" class="discussion-timeline js-quote-selection-container">
+      <div class="js-timeline-item">
+        <div class="TimelineItem">
+          <div class="timeline-comment">
+            <div class="comment-body markdown-body js-comment-body" data-testid="pr-description">
+              <h2>Summary</h2>
+              <p>Image-heavy pages take 100s+ to ingest because every image is downloaded and re-encoded. This PR adds lazy decoding and keeps the original asset URLs.</p>
+              <h2>Changes</h2>
+              <ul>
+                <li>Add <code>fetchpriority="low"</code> to below-the-fold images</li>
+                <li>Cache decoded frames keyed by URL</li>
+              </ul>
+              <pre><code>const image = new Image();
+image.decoding = "async";
+image.src = entry.url;</code></pre>
+              <table>
+                <thead><tr><th>Path</th><th>Effect</th></tr></thead>
+                <tbody>
+                  <tr><td>src/ingest.ts</td><td>Adds lazy decode</td></tr>
+                  <tr><td>src/cache.ts</td><td>Frame cache</td></tr>
+                </tbody>
+              </table>
+              <h3>Testing</h3>
+              <p>Verified with the fixtures page; timing drops from ~8s to ~1.2s.</p>
+            </div>
+            <div class="timeline-comment-header">
+              <a class="author" href="/ada">ada</a>
+              commented
+              <relative-time datetime="2026-08-20T10:00:00.000Z" title="Aug 20, 2026">on Aug 20, 2026</relative-time>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="js-timeline-item">
+        <div class="TimelineItem">
+          <div class="timeline-comment">
+            <div class="comment-body markdown-body js-comment-body">
+              <p>Please also update the CHANGELOG before merging.</p>
+            </div>
+            <div class="timeline-comment-header">
+              <a class="author" href="/bob">bob</a>
+              commented
+              <relative-time datetime="2026-08-21T09:30:00.000Z" title="Aug 21, 2026">on Aug 21, 2026</relative-time>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="discussion-sidebar" data-testid="pr-sidebar">
+      <div class="js-issue-labels" data-testid="issue-labels">
+        <a href="/acme/page2agent-demo/pulls?q=label%3Aperformance">
+          <span data-component="Text">performance</span>
+        </a>
+        <a href="/acme/page2agent-demo/pulls?q=label%3Aingestion">
+          <span data-component="Text">ingestion</span><span class="sr-only">Related to ingestion</span>
+        </a>
+      </div>
+    </aside>
+  </body>
+</html>

@@ -1,7 +1,10 @@
 # AGENTS.md — Page2Agent
 
-> Project: **Page2Agent V0.1**
+> Project: **Page2Agent V1.1 — Visual Context Workbench**
 > Product positioning: **Turn any webpage into agent-ready context.**
+> (V1.1: pick the right context, build the right task, send it to any agent —
+> web pages → structured, source-grounded context and tasks; see
+> `docs/adr/ADR-002-page2agent-v1.1-workbench.md` for the V1.1 decisions.)
 > This file is the canonical, long-lived engineering contract for all agents and
 > contributors working on this repository. Every stage MUST read it first.
 

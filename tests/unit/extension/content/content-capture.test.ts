@@ -10,8 +10,9 @@ import {
   makePageContext,
 } from "../../../helpers/load-html-fixture";
 import { ExtractorRegistry } from "../../../../src/core";
-import { GitHubIssueExtractor } from "../../../../src/adapters/github";
+import { GitHubIssueExtractor, GitHubPullRequestExtractor } from "../../../../src/adapters/github";
 import { GenericArticleExtractor } from "../../../../src/adapters/generic";
+import { TechnicalDocsExtractor } from "../../../../src/adapters/techdocs";
 
 const GITHUB_CONTEXT_URL = "https://github.com/acme/page2agent-demo/issues/42";
 
@@ -25,18 +26,26 @@ function makeDeps(overrides: Partial<Parameters<typeof handleContentCaptureReque
 }
 
 describe("production registry selection", () => {
-  it("resolves GitHub issues to github-issue and web pages to generic-article", () => {
+  it("resolves GitHub issues to github-issue and web pages to the docs-eligible adapter", () => {
     const registry = createProductionRegistry();
     expect(
       registry.resolve(makePageContext({ url: GITHUB_CONTEXT_URL }))?.id,
     ).toBe("github-issue");
+    // V1.1: the Technical Docs adapter sits before the generic fallback and
+    // shares its URL eligibility; extract() classifies docs-vs-generic and
+    // records whichever pipeline actually ran (see registry-priority.test.ts).
     expect(
       registry.resolve(makePageContext({ url: "https://example.com/docs/page" }))?.id,
-    ).toBe("generic-article");
+    ).toBe("technical-docs");
   });
 
-  it("has a unique, stable extractor id set", () => {
-    const registry = new ExtractorRegistry([new GitHubIssueExtractor(), new GenericArticleExtractor()]);
+  it("keeps a unique, stable extractor id set", () => {
+    const registry = new ExtractorRegistry([
+      new GitHubIssueExtractor(),
+      new GitHubPullRequestExtractor(),
+      new TechnicalDocsExtractor(),
+      new GenericArticleExtractor(),
+    ]);
     expect(registry.resolve(makePageContext({ url: GITHUB_CONTEXT_URL }))?.id).toBe("github-issue");
   });
 });

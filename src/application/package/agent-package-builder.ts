@@ -23,7 +23,10 @@ import {
 
 export function buildAgentPackage(document: NormalizedDocument): AgentPackage {
   switch (document.source.kind) {
-    case "web": {
+    case "web":
+    case "github_pull_request": {
+      // V1.1 interim: PR pages default to use-as-context until the user picks
+      // a recipe (verify/compare/build/fix) in the Workbench flow.
       const agentPackage: AgentPackage = {
         schemaVersion: AGENT_PACKAGE_SCHEMA_VERSION,
         document,

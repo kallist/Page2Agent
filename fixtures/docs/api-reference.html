@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-docusaurus-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <title>Streaming API Reference | Acme Platform Docs</title>
+    <meta property="og:title" content="Streaming API Reference">
+    <link rel="canonical" href="https://docs.example.com/api/streaming/reference">
+  </head>
+  <body>
+    <header class="navbar">
+      <a class="navbar__brand" href="/">Acme Docs</a>
+      <div class="DocSearch">
+        <input type="search" class="DocSearch-Input" placeholder="Search docs" aria-label="Search docs">
+      </div>
+    </header>
+
+    <div class="docs-wrapper">
+      <nav class="sidebar" aria-label="Docs sidebar">
+        <ul>
+          <li><a href="/api/overview">Overview</a></li>
+          <li><a href="/api/streaming/reference">Streaming API Reference</a></li>
+          <li><a href="/api/batching/reference">Batching API Reference</a></li>
+          <li><a href="/guides/quickstart">Quickstart</a></li>
+        </ul>
+      </nav>
+
+      <main class="docMainContainer">
+        <article class="theme-doc-markdown markdown">
+          <h1>Streaming API Reference</h1>
+          <p>The Streaming API lets you consume generated tokens as they arrive.</p>
+
+          <h2 id="authentication">Authentication</h2>
+          <p>Pass your API key in the <code>Authorization</code> header.</p>
+          <pre><code>curl https://api.example.com/v1/stream \
+  -H "Authorization: Bearer $ACME_TOKEN"</code></pre>
+
+          <h2 id="endpoint">Endpoint</h2>
+          <table>
+            <thead><tr><th>Method</th><th>Path</th></tr></thead>
+            <tbody><tr><td>POST</td><td>/v1/stream</td></tr></tbody>
+          </table>
+
+          <h2 id="parameters">Parameters</h2>
+          <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>model</td><td>string</td><td>yes</td><td>Model id to stream from.</td></tr>
+              <tr><td>messages</td><td>array</td><td>yes</td><td>Conversation messages.</td></tr>
+              <tr><td>temperature</td><td>number</td><td>no</td><td>Sampling temperature.</td></tr>
+            </tbody>
+          </table>
+
+          <h2 id="options">Options</h2>
+          <ul>
+            <li><code>stream_options.include_usage</code> — append usage metadata</li>
+            <li><code>timeout</code> — idle timeout in seconds</li>
+          </ul>
+
+          <h2 id="returns">Returns</h2>
+          <p>An SSE stream of delta objects.</p>
+          <pre><code>data: {"delta":{"content":"Hello"}}
+data: [DONE]</code></pre>
+
+          <h2 id="examples">Examples</h2>
+          <pre><code>const stream = await client.stream({ model: "demo", messages });
+for await (const delta of stream) {
+  process.stdout.write(delta.content);
+}</code></pre>
+
+          <div class="theme-admonition theme-admonition-note">
+            <div class="admonitionHeading">Note</div>
+            <p>Streams expire 10 minutes after the last event. Reconnect using the resume token.</p>
+          </div>
+
+          <div class="theme-admonition theme-admonition-warning">
+            <div class="admonitionHeading">Warning</div>
+            <p>Do not retry non-idempotent requests on timeouts without checking the server state.</p>
+          </div>
+
+          <nav class="table-of-contents" aria-label="On this page">
+            <a href="#authentication">Authentication</a>
+            <a href="#endpoint">Endpoint</a>
+            <a href="#parameters">Parameters</a>
+            <a href="#options">Options</a>
+            <a href="#returns">Returns</a>
+            <a href="#examples">Examples</a>
+            <a href="#notes">Notes</a>
+          </nav>
+        </article>
+      </main>
+    </div>
+  </body>
+</html>

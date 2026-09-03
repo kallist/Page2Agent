@@ -29,6 +29,7 @@ import type {
 } from "../../core";
 import { normalizeInlineText } from "../../shared/dom/text";
 import { extractIssueBodyBlocks, isBodyTextEmpty } from "./github-issue-body";
+import { extractLabelsFromContainer } from "./github-labels";
 import {
   EMPTY_BODY_SENTINEL_TEXT,
   firstMatch,
@@ -118,6 +119,10 @@ export class GitHubIssueExtractor implements PageExtractor {
       metadata,
       blocks,
       assets: collectAssetsFromBlocks(blocks),
+      capture: {
+        adapter: { id: "github-issue", name: "GitHub Issue" },
+        scope: "full-page",
+      },
     };
     if (!isNormalizedDocument(document)) {
       throw new Page2AgentError(Page2AgentErrorCode.INVALID_DOCUMENT);
@@ -133,24 +138,7 @@ export class GitHubIssueExtractor implements PageExtractor {
 }
 
 function extractLabels(sourceDocument: Document): string[] {
-  const container = firstMatch(sourceDocument, ISSUE_LABELS_CONTAINER_SELECTORS);
-  if (container === null) {
-    return [];
-  }
-  const labels: string[] = [];
-  const seen = new Set<string>();
-  for (const element of container.querySelectorAll("a")) {
-    if (element.getAttribute("aria-hidden") === "true") {
-      continue;
-    }
-    const visibleText = element.querySelector('[data-component="Text"]')?.textContent;
-    const text = normalizeInlineText(visibleText ?? element.textContent ?? "");
-    if (text && !seen.has(text)) {
-      seen.add(text);
-      labels.push(text);
-    }
-  }
-  return labels;
+  return extractLabelsFromContainer(sourceDocument, ISSUE_LABELS_CONTAINER_SELECTORS);
 }
 
 /**

@@ -8,7 +8,7 @@ import type { Page2AgentErrorCode as ErrorCode } from "../../core";
 
 export const CAPTURE_RESULT_SCHEMA_VERSION = 1 as const;
 
-export type SourceKind = "web" | "github_issue";
+export type SourceKind = "web" | "github_issue" | "github_pull_request";
 export type ActionKind = "use_as_context" | "fix_issue";
 
 export interface CaptureResult {
@@ -88,7 +88,9 @@ export function isCaptureResult(value: unknown): value is CaptureResult {
     !isNonNegativeSafeInteger(value.tabId) ||
     !isNonEmptyString(value.url) ||
     !isNonEmptyString(value.capturedAt) ||
-    (value.sourceKind !== "web" && value.sourceKind !== "github_issue") ||
+    (value.sourceKind !== "web" &&
+      value.sourceKind !== "github_issue" &&
+      value.sourceKind !== "github_pull_request") ||
     !isNonEmptyString(value.title) ||
     (value.actionKind !== "use_as_context" && value.actionKind !== "fix_issue") ||
     !isRecord(value.stats) ||

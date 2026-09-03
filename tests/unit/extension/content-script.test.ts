@@ -45,13 +45,11 @@ describe("content script global initialization state", () => {
 });
 
 describe("production content message listener", () => {
-  it("answers unknown messages with a safe INVALID_MESSAGE failure", async () => {
+  it("ignores unknown messages without responding (MV3 channel etiquette)", () => {
     const listener = createContentMessageListener();
     const sendResponse = vi.fn();
     const result = listener("not-a-message", {} as chrome.runtime.MessageSender, sendResponse);
-    expect(result).toBe(true);
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledTimes(1));
-    const response = sendResponse.mock.calls[0][0];
-    expect(response).toMatchObject({ type: "content.capture.failure", error: { code: "INVALID_MESSAGE" } });
+    expect(result).toBe(false);
+    expect(sendResponse).not.toHaveBeenCalled();
   });
 });

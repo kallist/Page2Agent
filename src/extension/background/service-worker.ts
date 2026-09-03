@@ -7,7 +7,9 @@
  */
 import { createActionClickHandler } from "./action-capture";
 import { captureExactTab, chromeCaptureRuntimeDeps } from "./capture";
+import { handleLensRoutedRequest } from "./lens-route";
 import { isHarnessCaptureRequest } from "../messaging/runtime-messages";
+import { isLensRoutedRequest } from "../messaging/lens-messages";
 import { chromeSessionStorage } from "../session/session-storage";
 
 const handleActionClick = createActionClickHandler({
@@ -38,6 +40,16 @@ chrome.action.onClicked.addListener((tab) => {
  * permissions, so this test seam is fail-closed and unreachable there.
  */
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (isLensRoutedRequest(message)) {
+    const fromExtensionPage = sender.url?.startsWith("chrome-extension://") === true;
+    if (!fromExtensionPage) {
+      return false;
+    }
+    void handleLensRoutedRequest(message, {
+      sendMessageToTab: (tabId, lensMessage) => chrome.tabs.sendMessage(tabId, lensMessage),
+    }).then(sendResponse);
+    return true;
+  }
   if (!isE2eHarnessBuild() || !isHarnessCaptureRequest(message)) {
     return false;
   }

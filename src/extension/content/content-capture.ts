@@ -9,7 +9,8 @@
 import { ExtractorRegistry, isNormalizedDocument, Page2AgentErrorCode, userSafeMessage } from "../../core";
 import type { NormalizedDocument, PageContext } from "../../core";
 import { GenericArticleExtractor } from "../../adapters/generic";
-import { GitHubIssueExtractor } from "../../adapters/github";
+import { GitHubIssueExtractor, GitHubPullRequestExtractor } from "../../adapters/github";
+import { TechnicalDocsExtractor } from "../../adapters/techdocs";
 import { toCaptureErrorView } from "../capture/capture-result";
 import type { CaptureErrorView } from "../capture/capture-result";
 import {
@@ -22,10 +23,18 @@ import { isSameCapturedPage } from "../messaging/page-url";
 
 /**
  * Stateless production registry. Immutable; holds no capture state, so a
- * module-level instance is MV3-safe.
+ * module-level instance is MV3-safe. Order = priority: site-specific GitHub
+ * adapters, then the Technical Documentation adapter (which honestly falls
+ * back to Generic inside extract() when confidence is insufficient), then
+ * the generic fallback.
  */
 export function createProductionRegistry(): ExtractorRegistry {
-  return new ExtractorRegistry([new GitHubIssueExtractor(), new GenericArticleExtractor()]);
+  return new ExtractorRegistry([
+    new GitHubIssueExtractor(),
+    new GitHubPullRequestExtractor(),
+    new TechnicalDocsExtractor(),
+    new GenericArticleExtractor(),
+  ]);
 }
 
 export interface ContentCaptureDeps {
